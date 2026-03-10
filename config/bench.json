@@ -34,6 +34,19 @@
       "skillVersion": "v1",
       "command": "/solidity-auditor deep",
       "deep": true
+    },
+    {
+      "id": "skill_v2_default",
+      "type": "skill",
+      "skillVersion": "v2",
+      "command": "/solidity-auditor"
+    },
+    {
+      "id": "skill_v2_deep",
+      "type": "skill",
+      "skillVersion": "v2",
+      "command": "/solidity-auditor deep",
+      "deep": true
     }
   ],
   "defaultRunsPerCondition": 1
