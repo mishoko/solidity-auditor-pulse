@@ -19,7 +19,7 @@ export async function spawnClaude(opts: SpawnClaudeOptions): Promise<{ exitCode:
     return { exitCode: 0, durationMs: 0 };
   }
 
-  const args = ['-p', opts.prompt];
+  const args = ['-p', opts.prompt, '--dangerously-skip-permissions'];
   if (opts.model) {
     args.push('--model', opts.model);
   }

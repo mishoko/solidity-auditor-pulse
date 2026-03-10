@@ -40,8 +40,8 @@ const BARE_FINDING_RE = /^#{2,4}\s+\[(CRITICAL|HIGH|MEDIUM|LOW|INFO)\]\s+(.+?)(?
 // --- Root cause normalization ---
 const VULN_KEYWORDS: [RegExp, string][] = [
   [/reentranc/i, 'reentrancy'],
-  [/access.?control|missing.?(?:access|owner|auth)|unrestricted/i, 'access-control'],
-  [/unchecked.{0,3}(?:return|send|call)|silent.?(?:fail|fund|loss)/i, 'unchecked-return'],
+  [/access.?control|missing.?(?:access|owner|auth)|unrestricted|unprotected|(?:anyone|any\s+user).*can/i, 'access-control'],
+  [/unchecked.{0,3}(?:return|send|call)|silent.*(?:fail|fund|loss)/i, 'unchecked-return'],
   [/tx\.origin|phishing/i, 'tx-origin'],
   [/overflow|underflow/i, 'overflow'],
   [/front.?run|sandwich|mev/i, 'frontrunning'],
