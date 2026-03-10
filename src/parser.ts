@@ -34,14 +34,14 @@ const SKILL_LOCATION_RE = /^`([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)`\s+·/;
 const SKILL_TABLE_ROW_RE = /^\|\s*(\d+)\s*\|\s*\[(\d+)\]\s*\|\s*(.+?)\s*\|/;
 
 // --- Bare format parsing ---
-// Pattern: ### [SEVERITY] Title — Location
-const BARE_FINDING_RE = /^###\s+\[(CRITICAL|HIGH|MEDIUM|LOW|INFO)\]\s+(.+?)(?:\s+—\s+(.+))?$/i;
+// Pattern: ##+ [SEVERITY] Title — Location (bare Claude uses variable header levels)
+const BARE_FINDING_RE = /^#{2,4}\s+\[(CRITICAL|HIGH|MEDIUM|LOW|INFO)\]\s+(.+?)(?:\s+—\s+(.+))?$/i;
 
 // --- Root cause normalization ---
 const VULN_KEYWORDS: [RegExp, string][] = [
   [/reentranc/i, 'reentrancy'],
   [/access.?control|missing.?(?:access|owner|auth)|unrestricted/i, 'access-control'],
-  [/unchecked.?(?:return|send|call)|silent.?(?:fail|fund|loss)/i, 'unchecked-return'],
+  [/unchecked.{0,3}(?:return|send|call)|silent.?(?:fail|fund|loss)/i, 'unchecked-return'],
   [/tx\.origin|phishing/i, 'tx-origin'],
   [/overflow|underflow/i, 'overflow'],
   [/front.?run|sandwich|mev/i, 'frontrunning'],
@@ -107,7 +107,7 @@ export function parseOutput(text: string): ParseResult {
 
   // Detect format
   const hasSkillHeader = text.includes('🔐 Security Review') || text.includes('## Scope');
-  const hasBareHeader = /^###\s+\[(CRITICAL|HIGH|MEDIUM|LOW)/im.test(text);
+  const hasBareHeader = /^#{2,4}\s+\[(CRITICAL|HIGH|MEDIUM|LOW)/im.test(text);
 
   if (hasSkillHeader) return parseSkillFormat(lines);
   if (hasBareHeader) return parseBareFormat(lines);
@@ -181,8 +181,8 @@ function parseBareFormat(lines: string[]): ParseResult {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
-    // Track section headers: ## Vault.sol, ## TokenSale.sol
-    const sectionMatch = line.match(/^##\s+(\w+)\.sol\s*$/);
+    // Track section headers: ##+ Vault.sol, ##+ TokenSale.sol
+    const sectionMatch = line.match(/^#{2,4}\s+(\w+)\.sol\s*$/);
     if (sectionMatch) {
       currentContract = sectionMatch[1];
       continue;

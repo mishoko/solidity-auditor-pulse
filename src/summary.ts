@@ -43,7 +43,10 @@ function loadRuns(resultsDir: string): RunData[] {
     const meta: RunMeta = JSON.parse(fs.readFileSync(path.join(resultsDir, file), 'utf8'));
     if (meta.exitCode !== 0) continue; // skip failed runs
     const stdoutFile = path.join(resultsDir, `${meta.runId}.stdout.txt`);
-    if (!fs.existsSync(stdoutFile)) continue;
+    if (!fs.existsSync(stdoutFile)) {
+      log.warn(`Orphaned meta (no stdout): ${file} — delete or re-run`);
+      continue;
+    }
 
     const text = fs.readFileSync(stdoutFile, 'utf8');
     const parse = parseOutput(text);

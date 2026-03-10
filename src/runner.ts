@@ -89,9 +89,11 @@ async function runSingle(
     durationMs,
   };
 
-  // Write metadata
-  const metaPath = path.join(ROOT, 'results', `${runId}.meta.json`);
-  fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+  // Write metadata (skip for dry runs — no real output to pair with)
+  if (!opts.dryRun) {
+    const metaPath = path.join(ROOT, 'results', `${runId}.meta.json`);
+    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+  }
 
   if (exitCode === 0) {
     log.success(`Completed in ${(durationMs / 1000).toFixed(1)}s → results/${runId}.stdout.txt`);
