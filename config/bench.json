@@ -1,8 +1,19 @@
 {
   "codebases": [
     {
-      "id": "xyz",
-      "path": "datasets/xyz"
+      "id": "panoptic",
+      "path": "datasets/panoptic",
+      "gitCommit": "fe557748210a529ae414d7c487b6514be0d9e220"
+    },
+    {
+      "id": "ekubo",
+      "path": "datasets/ekubo",
+      "gitCommit": "bbc87eb26d73700cf886f1b3f06f8a348d9c6aef"
+    },
+    {
+      "id": "megapot",
+      "path": "datasets/megapot",
+      "gitCommit": "f0a7297d59c376e38b287b2c56740617dbbfbdc7"
     }
   ],
   "conditions": [
@@ -25,5 +36,5 @@
       "deep": true
     }
   ],
-  "defaultRunsPerCondition": 3
+  "defaultRunsPerCondition": 1
 }
