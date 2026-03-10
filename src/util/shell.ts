@@ -8,11 +8,14 @@ export interface SpawnClaudeOptions {
   model?: string;
   outputPath: string;
   dryRun?: boolean;
+  /** When true, isolate claude from ALL user config (commands, memory, settings) */
+  bare?: boolean;
 }
 
 export async function spawnClaude(opts: SpawnClaudeOptions): Promise<{ exitCode: number; durationMs: number }> {
   if (opts.dryRun) {
-    log.dry(`cd ${opts.cwd} && claude -p "${opts.prompt.slice(0, 80)}..."`);
+    const mode = opts.bare ? ' [BARE]' : '';
+    log.dry(`cd ${opts.cwd} && claude -p "${opts.prompt.slice(0, 80)}..."${mode}`);
     return { exitCode: 0, durationMs: 0 };
   }
 
@@ -28,6 +31,14 @@ export async function spawnClaude(opts: SpawnClaudeOptions): Promise<{ exitCode:
       !key.startsWith('CLAUDE_CODE') && key !== 'CLAUDECODE'
     )
   );
+
+  if (opts.bare) {
+    // Disable all skills/commands so bare Claude can't invoke the auditor skill.
+    // Also skip user-level settings (memory, CLAUDE.md, custom settings).
+    args.push('--disable-slash-commands');
+    args.push('--setting-sources', 'project,local');
+    log.info('Bare mode: slash commands disabled, user settings skipped');
+  }
 
   const start = Date.now();
   const outStream = fs.createWriteStream(opts.outputPath, { encoding: 'utf8' });
