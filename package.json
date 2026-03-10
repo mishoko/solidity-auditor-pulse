@@ -1,0 +1,23 @@
+{
+  "name": "benchmark-runner",
+  "version": "0.1.0",
+  "description": "Benchmark solidity-auditor Claude Code skill vs bare Claude baseline",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "bench": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "bench": "tsc && node dist/cli.js",
+    "bench:dry": "tsc && node dist/cli.js --dry-run"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "codebases": [
+    {
+      "id": "xyz",
+      "path": "datasets/xyz"
+    }
+  ],
+  "conditions": [
+    {
+      "id": "bare_audit",
+      "type": "bare",
+      "prompt": "Perform a thorough security audit of all Solidity smart contracts in this repository. Identify vulnerabilities, and provide specific code references and remediation suggestions."
+    },
+    {
+      "id": "skill_v1_default",
+      "type": "skill",
+      "skillVersion": "v1",
+      "command": "/solidity-auditor"
+    },
+    {
+      "id": "skill_v1_deep",
+      "type": "skill",
+      "skillVersion": "v1",
+      "command": "/solidity-auditor deep",
+      "deep": true
+    }
+  ],
+  "defaultRunsPerCondition": 3
+}
