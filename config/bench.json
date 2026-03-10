@@ -40,17 +40,10 @@
       "deep": true
     },
     {
-      "id": "skill_v2_default",
+      "id": "skill_v2",
       "type": "skill",
       "skillVersion": "v2",
       "command": "/solidity-auditor"
-    },
-    {
-      "id": "skill_v2_deep",
-      "type": "skill",
-      "skillVersion": "v2",
-      "command": "/solidity-auditor deep",
-      "deep": true
     }
   ],
   "defaultRunsPerCondition": 1

@@ -19,8 +19,7 @@ interface RunData {
 
 /** Display names and sort order for conditions */
 const CONDITION_ORDER: [string, string][] = [
-  ['skill_v2_default', 'V2 Default'],
-  ['skill_v2_deep', 'V2 Deep'],
+  ['skill_v2', 'V2'],
   ['skill_v1_default', 'V1 Default'],
   ['skill_v1_deep', 'V1 Deep'],
   ['bare_audit', 'CC Bare'],
