@@ -55,7 +55,11 @@ function loadRuns(resultsDir: string): RunData[] {
 
 function formatDuration(ms: number): string {
   if (ms === 0) return '-';
-  return `${(ms / 1000).toFixed(0)}s`;
+  const totalSec = Math.round(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min === 0) return `${sec}s`;
+  return `${totalSec}s (${min}m ${sec}s)`;
 }
 
 function severityOrConfidence(f: ParsedFinding): string {
@@ -76,9 +80,6 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
 
   push('# Benchmark Results');
   push('');
-  push(`Generated: ${new Date().toISOString()}`);
-  push(`Runs analyzed: ${allRuns.length}`);
-  push('');
 
   // Group by codebase
   const byCodebase = new Map<string, RunData[]>();
@@ -89,9 +90,6 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
   }
 
   for (const [codebaseId, codebaseRuns] of byCodebase) {
-    // Find all conditions and iterations present
-    const conditionIds = [...new Set(codebaseRuns.map(r => r.meta.conditionId))]
-      .sort((a, b) => conditionSortIndex(a) - conditionSortIndex(b));
     const iterations = [...new Set(codebaseRuns.map(r => r.meta.iteration))].sort();
 
     for (const iteration of iterations) {
@@ -117,11 +115,11 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
         }
       }
 
-      push(`| Root Cause | ${colHeaders.join(' | ')} |`);
-      push(`|------------|${colHeaders.map(() => '---').join('|')}|`);
+      // Build all rows first, then pad for alignment
+      type Row = { label: string; cells: string[] };
+      const rows: Row[] = [];
 
       for (const [rootCause] of allRootCauses) {
-        // Pick the best title across all runs (prefer skill format — more descriptive)
         const titles: string[] = [];
         const cells = iterRuns.map(({ parse }) => {
           const match = parse.findings.find(f => f.rootCause === rootCause);
@@ -129,58 +127,52 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
           titles.push(match.title);
           return severityOrConfidence(match);
         });
-
-        // Use the shortest clear title
         const title = titles.reduce((a, b) => a.length <= b.length ? a : b, titles[0] || rootCause);
-        const shortTitle = title.length > 55 ? title.slice(0, 52) + '...' : title;
-
-        push(`| ${shortTitle} | ${cells.join(' | ')} |`);
+        rows.push({ label: title, cells });
       }
 
       // Footer rows
-      const totals = iterRuns.map(r => `**${r.parse.findings.length}**`);
-      push(`| **Total** | ${totals.join(' | ')} |`);
-
-      const validations = iterRuns.map(r => {
-        const consolidated = r.parse.findings.length;
-        const reported = r.parse.reportedCount;
-        if (reported === null) return `${consolidated}/?`;
-        return `${consolidated}/${reported}${consolidated === reported ? ' ✓' : ' ✗'}`;
+      rows.push({
+        label: '**Total**',
+        cells: iterRuns.map(r => `**${r.parse.findings.length}**`),
       });
-      push(`| **Consolidated / Reported** | ${validations.join(' | ')} |`);
+      rows.push({
+        label: '**Duration**',
+        cells: iterRuns.map(r => formatDuration(r.meta.durationMs)),
+      });
 
-      const durations = iterRuns.map(r => formatDuration(r.meta.durationMs));
-      push(`| **Duration** | ${durations.join(' | ')} |`);
+      // Compute column widths
+      const colCount = colHeaders.length;
+      const labelWidth = Math.max(
+        'Root Cause'.length,
+        ...rows.map(r => r.label.length),
+      );
+      const colWidths: number[] = [];
+      for (let c = 0; c < colCount; c++) {
+        colWidths.push(Math.max(
+          colHeaders[c].length,
+          ...rows.map(r => r.cells[c].length),
+        ));
+      }
+
+      const pad = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - s.length));
+
+      // Emit aligned table
+      const hdr = `| ${pad('Root Cause', labelWidth)} | ${colHeaders.map((h, i) => pad(h, colWidths[i])).join(' | ')} |`;
+      const sep = `| ${'-'.repeat(labelWidth)} | ${colWidths.map(w => '-'.repeat(w)).join(' | ')} |`;
+      push(hdr);
+      push(sep);
+
+      for (const row of rows) {
+        const line = `| ${pad(row.label, labelWidth)} | ${row.cells.map((c, i) => pad(c, colWidths[i])).join(' | ')} |`;
+        push(line);
+      }
 
       push('');
     }
   }
 
-  // --- Timing Summary ---
-  push('## Timing Summary');
-  push('');
-
-  const conditionIds = [...new Set(allRuns.map(r => r.meta.conditionId))]
-    .sort((a, b) => conditionSortIndex(a) - conditionSortIndex(b));
-  const codebaseIds = [...byCodebase.keys()];
-
-  const colHeaders = conditionIds.map(conditionLabel);
-  push(`| Codebase | ${colHeaders.join(' | ')} |`);
-  push(`|----------|${colHeaders.map(() => '---').join('|')}|`);
-
-  for (const codebaseId of codebaseIds) {
-    const cells = conditionIds.map(condId => {
-      const matching = allRuns.filter(r =>
-        r.meta.codebaseId === codebaseId && r.meta.conditionId === condId
-      );
-      if (matching.length === 0) return '-';
-      const avg = matching.reduce((s, r) => s + r.meta.durationMs, 0) / matching.length;
-      const suffix = matching.length > 1 ? ` (×${matching.length})` : '';
-      return formatDuration(avg) + suffix;
-    });
-    push(`| ${codebaseId} | ${cells.join(' | ')} |`);
-  }
-
+  push(`*Generated: ${new Date().toISOString()}*`);
   push('');
 
   const content = lines.join('\n');

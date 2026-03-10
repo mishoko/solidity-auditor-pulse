@@ -173,11 +173,20 @@ function parseSkillFormat(lines: string[]): ParseResult {
 function parseBareFormat(lines: string[]): ParseResult {
   const findings: ParsedFinding[] = [];
   let index = 0;
-  // Check for a summary table to get reported count
   let reportedCount: number | null = null;
+
+  // Track current ## Contract.sol section to infer contract name
+  let currentContract: string | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
+
+    // Track section headers: ## Vault.sol, ## TokenSale.sol
+    const sectionMatch = line.match(/^##\s+(\w+)\.sol\s*$/);
+    if (sectionMatch) {
+      currentContract = sectionMatch[1];
+      continue;
+    }
 
     const m = BARE_FINDING_RE.exec(line);
     if (m) {
@@ -185,7 +194,15 @@ function parseBareFormat(lines: string[]): ParseResult {
       const severity = m[1].toUpperCase();
       const title = m[2].trim();
       const locStr = m[3] || null;
-      const location = extractLocation(title, locStr);
+
+      // Try to extract location from title, fall back to current section contract
+      let location = extractLocation(title, locStr);
+      if (location && !location.includes('.') && currentContract) {
+        // We only got a function name — combine with current contract section
+        location = `${currentContract}.${location}`;
+      } else if (!location && currentContract) {
+        location = currentContract;
+      }
 
       findings.push({
         index,
@@ -197,11 +214,18 @@ function parseBareFormat(lines: string[]): ParseResult {
       });
     }
 
-    // Try to parse summary table: | Critical | 2 | ... |
-    const summaryMatch = line.match(/^\|\s*(Critical|High|Medium|Low|Info)\s*\|\s*(\d+)\s*\|/i);
-    if (summaryMatch) {
-      const count = parseInt(summaryMatch[2], 10);
+    // Count summary table rows. Two formats:
+    // 1. Aggregated: | Critical | 2 | ... |
+    // 2. Per-finding: | Critical | Contract | Issue | ... |
+    const summaryAgg = line.match(/^\|\s*(Critical|High|Medium|Low|Info)\s*\|\s*(\d+)\s*\|/i);
+    if (summaryAgg) {
+      const count = parseInt(summaryAgg[2], 10);
       reportedCount = (reportedCount ?? 0) + count;
+    } else {
+      const summaryRow = line.match(/^\|\s*(Critical|High|Medium|Low|Info)\s*\|/i);
+      if (summaryRow) {
+        reportedCount = (reportedCount ?? 0) + 1;
+      }
     }
   }
 
