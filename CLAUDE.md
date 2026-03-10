@@ -9,35 +9,75 @@ CLI tool that benchmarks the `solidity-auditor` Claude Code skill (from [pashov/
 ```
 src/                TypeScript source (cli, config, runner, workspace, skill, util/)
 config/             JSON benchmark configs (bench.json)
-datasets/           Solidity codebases to audit (git submodules)
+datasets/           Solidity codebases to audit (submodules + canary inline)
 skills_versions/    Pinned skill snapshots (v1/, v2/, each with source.json provenance)
-workspaces/         Ephemeral per-run workspaces (gitignored)
+workspaces/         Ephemeral symlinked workspaces (gitignored, auto-cleaned)
 results/            Run outputs: .stdout.txt + .meta.json per run (gitignored)
-ground_truth/       Optional future reference findings
+ground_truth/       Known-bug answer keys per codebase (JSON, enables Recall/FP scoring)
 ```
 
 ## How It Works
 
-`npm run bench` runs the full matrix:
+`npm run bench` runs the full matrix (all codebases x all conditions x N runs). **This is expensive** — prefer filtered runs during development.
 
 1. Loads config from `config/bench.json`
-2. For each `(codebase, condition, iteration)`:
-   - Copies codebase into `workspaces/<runId>/code/`
-   - For skill conditions: installs skill into `workspaces/<runId>/.claude/commands/`
-   - Spawns `claude -p "<prompt>"` in the workspace (fresh process each time)
+2. Prepares workspaces (one per codebase x skill version):
+   - **Skill runs**: `workspaces/<codebase>_<version>/code/` symlinks to `datasets/<codebase>`, `.claude/commands/` gets skill copy
+   - **Bare runs**: runs directly in `datasets/<codebase>/` (no workspace, no copy)
+3. For each `(codebase, condition, iteration)`:
+   - Spawns `claude -p "<prompt>"` in the resolved cwd (fresh process each time)
+   - Bare runs add `--disable-slash-commands --setting-sources project,local`
    - Captures stdout to `results/<runId>.stdout.txt`
    - Writes metadata to `results/<runId>.meta.json`
+4. Cleans up all workspaces after suite completes
 
 ## Commands
 
 ```bash
-npm run bench                                          # Full matrix
-npm run bench -- --runs 1                              # Single iteration
-npm run bench -- --conditions bare_audit --runs 1      # Single condition
-npm run bench -- --codebases abc --runs 1         # Single codebase
-npm run bench:dry                                      # Dry run (no claude spawned)
-npm run build                                          # Compile TypeScript
+# IMPORTANT: Running without filters runs the FULL matrix (all codebases x all conditions).
+# Always use filters during development/testing.
+
+# Quick single test
+npm run bench -- --codebases canary --conditions skill_v2 --runs 1
+
+# Compare all conditions on one codebase
+npm run bench -- --codebases canary --runs 1
+
+# Single condition across all codebases
+npm run bench -- --conditions bare_audit --runs 1
+
+# Multiple iterations for consistency testing
+npm run bench -- --codebases canary --runs 3
+
+# Full matrix (expensive — all codebases x all conditions x 1 run)
+npm run bench
+
+# Dry run (shows what would run, no claude spawned)
+npm run bench:dry
+
+# Generate summary table from existing results
+npm run summary:results
+
+# Build TypeScript
+npm run build
 ```
+
+### Available filters
+
+- `--codebases <id>` — filter to specific codebase(s): `canary`, `panoptic`, `ekubo`, `megapot`
+- `--conditions <id>` — filter to specific condition(s): `bare_audit`, `skill_v1_default`, `skill_v1_deep`, `skill_v2`
+- `--runs <N>` — override number of iterations per condition (default: 1)
+- `--model <model>` — override Claude model
+- `--dry-run` — preview without spawning claude
+
+### Conditions explained
+
+| Condition | What it does |
+|---|---|
+| `bare_audit` | Raw Claude with a security audit prompt, no skills, no user config |
+| `skill_v1_default` | V1 skill, 4 vector-scan agents (Sonnet) |
+| `skill_v1_deep` | V1 skill, 4 vector-scan agents (Sonnet) + 1 adversarial agent (Opus) |
+| `skill_v2` | V2 skill, 5 agents + fp-gate validation agent (no deep mode — always full) |
 
 ## Adding a Skill Version
 
@@ -49,6 +89,11 @@ npm run build                                          # Compile TypeScript
 
 1. Add as git submodule: `git submodule add <repo-url> datasets/<id>`
 2. Add entry to `config/bench.json` codebases array
+3. (Optional) Add ground truth: `ground_truth/<id>.json`
+
+## Ground Truth
+
+Files in `ground_truth/<codebaseId>.json` define known bugs. When present, the summary table adds **Recall** (how many real bugs found) and **FPs** (false positives) rows, and marks FP findings with `(FP)`. Ground truth files are at the project root — invisible to Claude during runs.
 
 ## Critical: Env Var Isolation
 
