@@ -2,8 +2,9 @@
  * Reads all results/*.meta.json + *.stdout.txt, parses findings,
  * normalizes root causes, and generates a comparison markdown table.
  *
- * Column order: V2 default, V2 deep, V1 default, V1 deep, CC bare
+ * Column order: V2, V1 default, V1 deep, CC bare
  * Rows grouped by iteration (Run 1, Run 2, …)
+ * If ground_truth/<codebaseId>.json exists, adds a Recall row.
  */
 
 import * as fs from 'node:fs';
@@ -59,6 +60,24 @@ function formatDuration(ms: number): string {
   const sec = totalSec % 60;
   if (min === 0) return `${sec}s`;
   return `${totalSec}s (${min}m ${sec}s)`;
+}
+
+interface GroundTruthFinding {
+  id: string;
+  rootCause: string;
+  location: string;
+  description: string;
+}
+
+interface GroundTruth {
+  codebaseId: string;
+  findings: GroundTruthFinding[];
+}
+
+function loadGroundTruth(codebaseId: string): GroundTruth | null {
+  const gtPath = path.resolve(process.cwd(), 'ground_truth', `${codebaseId}.json`);
+  if (!fs.existsSync(gtPath)) return null;
+  return JSON.parse(fs.readFileSync(gtPath, 'utf8'));
 }
 
 function severityOrConfidence(f: ParsedFinding): string {
@@ -118,6 +137,10 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
       type Row = { label: string; cells: string[] };
       const rows: Row[] = [];
 
+      // Load ground truth for FP labeling (if available)
+      const gt = loadGroundTruth(codebaseId);
+      const gtRootCauses = new Set(gt?.findings.map(f => f.rootCause) ?? []);
+
       for (const [rootCause] of allRootCauses) {
         const titles: string[] = [];
         const cells = iterRuns.map(({ parse }) => {
@@ -127,7 +150,8 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
           return severityOrConfidence(match);
         });
         const title = titles.reduce((a, b) => a.length <= b.length ? a : b, titles[0] || rootCause);
-        rows.push({ label: title, cells });
+        const isFP = gt && !gtRootCauses.has(rootCause);
+        rows.push({ label: isFP ? `(FP) ~${title}~` : title, cells });
       }
 
       // Footer rows
@@ -135,6 +159,28 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
         label: '**Total**',
         cells: iterRuns.map(r => `**${r.parse.findings.length}**`),
       });
+
+      // Recall and FP count rows — only if ground truth exists
+      if (gt) {
+        const gtCount = gt.findings.length;
+        rows.push({
+          label: '**Recall**',
+          cells: iterRuns.map(({ parse }) => {
+            const found = gt.findings.filter(g =>
+              parse.findings.some(f => f.rootCause === g.rootCause)
+            );
+            return `**${found.length}/${gtCount}**`;
+          }),
+        });
+        rows.push({
+          label: '**FPs**',
+          cells: iterRuns.map(({ parse }) => {
+            const fpCount = parse.findings.filter(f => !gtRootCauses.has(f.rootCause)).length;
+            return `**${fpCount}**`;
+          }),
+        });
+      }
+
       rows.push({
         label: '**Duration**',
         cells: iterRuns.map(r => formatDuration(r.meta.durationMs)),

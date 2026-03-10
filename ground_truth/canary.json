@@ -1,0 +1,30 @@
+{
+  "codebaseId": "canary",
+  "description": "Synthetic test contracts with 4 planted vulnerabilities",
+  "findings": [
+    {
+      "id": "reentrancy-vault-withdraw",
+      "rootCause": "vault::reentrancy",
+      "location": "Vault.withdraw",
+      "description": "CEI violation — external call before balance update"
+    },
+    {
+      "id": "access-control-setprice",
+      "rootCause": "tokensale::access-control",
+      "location": "TokenSale.setPrice",
+      "description": "No onlyOwner modifier, anyone can set price to zero"
+    },
+    {
+      "id": "unchecked-return-withdrawunsafe",
+      "rootCause": "vault::unchecked-return",
+      "location": "Vault.withdrawUnsafe",
+      "description": "send() return value ignored, funds lost silently"
+    },
+    {
+      "id": "tx-origin-withdrawfunds",
+      "rootCause": "tokensale::tx-origin",
+      "location": "TokenSale.withdrawFunds",
+      "description": "tx.origin auth enables phishing via intermediary contract"
+    }
+  ]
+}
