@@ -1,8 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { BenchConfig, CliOptions, CodebaseConfig, ConditionConfig, RunMeta } from './types.js';
-import { createWorkspace, codePath, resolveGitCommit } from './workspace.js';
-import { setupSkillForRun, resolveSkillGitCommit } from './skill.js';
+import { getRunCwd, prepareSkillWorkspace, resolveGitCommit, cleanupWorkspaces } from './workspace.js';
+import { skillSrcPath, resolveSkillGitCommit } from './skill.js';
 import { spawnClaude } from './util/shell.js';
 import * as log from './util/logger.js';
 
@@ -36,17 +36,13 @@ async function runSingle(
   log.separator();
   log.info(`Run: ${runId}`);
 
-  if (!opts.dryRun) {
-    // 1. Create workspace with codebase copy
-    await createWorkspace(runId, codebase.path);
+  // Resolve the cwd for this run
+  const skillVersion = condition.type === 'skill' ? condition.skillVersion : null;
+  const cwd = opts.dryRun
+    ? `/workspaces/${codebase.id}_${skillVersion ?? 'bare'}/code`
+    : getRunCwd(codebase.id, codebase.path, skillVersion);
 
-    // 2. Setup skill if needed
-    if (condition.type === 'skill') {
-      await setupSkillForRun(runId, condition);
-    }
-  }
-
-  // 3. Build the prompt
+  // Build the prompt
   let prompt: string;
   if (condition.type === 'bare') {
     prompt = condition.prompt;
@@ -57,17 +53,18 @@ async function runSingle(
     }
   }
 
-  // 4. Spawn claude
+  // Spawn claude
   const outputPath = path.join(ROOT, 'results', `${runId}.stdout.txt`);
   const { exitCode, durationMs } = await spawnClaude({
-    cwd: codePath(runId),
+    cwd,
     prompt,
     model: opts.model,
     outputPath,
     dryRun: opts.dryRun,
+    bare: condition.type === 'bare',
   });
 
-  // 5. Build metadata
+  // Build metadata
   const codebaseGitCommit = codebase.gitCommit ?? await resolveGitCommit(codebase.path);
   const skillGitCommit = condition.type === 'skill'
     ? await resolveSkillGitCommit(condition.skillVersion)
@@ -92,7 +89,7 @@ async function runSingle(
     durationMs,
   };
 
-  // 6. Write metadata
+  // Write metadata
   const metaPath = path.join(ROOT, 'results', `${runId}.meta.json`);
   fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
 
@@ -122,7 +119,32 @@ export async function runBench(config: BenchConfig, opts: CliOptions): Promise<R
   const runs = opts.runsOverride ?? config.defaultRunsPerCondition;
   const total = codebases.length * conditions.length * runs;
 
-  log.info(`Benchmark: ${codebases.length} codebases × ${conditions.length} conditions × ${runs} runs = ${total} total`);
+  // Prepare all skill workspaces upfront (one per codebase × skillVersion)
+  if (!opts.dryRun) {
+    const skillVersions = new Set(
+      conditions
+        .filter((c): c is Extract<ConditionConfig, { type: 'skill' }> => c.type === 'skill')
+        .map(c => c.skillVersion)
+    );
+
+    for (const codebase of codebases) {
+      for (const sv of skillVersions) {
+        const src = skillSrcPath(sv);
+        await prepareSkillWorkspace(codebase.id, codebase.path, sv, src);
+      }
+    }
+  }
+
+  const bareCount = conditions.filter(c => c.type === 'bare').length * codebases.length * runs;
+  const skillCount = total - bareCount;
+  log.info(
+    `Benchmark: ${codebases.length} codebases × ${conditions.length} conditions × ${runs} runs = ${total} total`
+  );
+  log.info(
+    `Workspaces: ${bareCount > 0 ? `${bareCount} bare (no copy)` : ''}` +
+    `${bareCount > 0 && skillCount > 0 ? ' + ' : ''}` +
+    `${skillCount > 0 ? `${skillCount} skill (shared symlinked workspaces)` : ''}`
+  );
 
   const results: RunMeta[] = [];
 
@@ -133,6 +155,11 @@ export async function runBench(config: BenchConfig, opts: CliOptions): Promise<R
         results.push(meta);
       }
     }
+  }
+
+  // Cleanup workspaces after all runs
+  if (!opts.dryRun) {
+    cleanupWorkspaces();
   }
 
   log.separator();

@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc",
     "bench": "tsc && node dist/cli.js",
-    "bench:dry": "tsc && node dist/cli.js --dry-run"
+    "bench:dry": "tsc && node dist/cli.js --dry-run",
+    "summary:results": "tsc && node dist/summary.js"
   },
   "dependencies": {
     "chalk": "^5.3.0",

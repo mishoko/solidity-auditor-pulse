@@ -14,6 +14,10 @@
       "id": "megapot",
       "path": "datasets/megapot",
       "gitCommit": "f0a7297d59c376e38b287b2c56740617dbbfbdc7"
+    },
+    {
+      "id": "canary",
+      "path": "datasets/canary"
     }
   ],
   "conditions": [
