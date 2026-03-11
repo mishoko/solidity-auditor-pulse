@@ -53,5 +53,6 @@ export interface CliOptions {
   codebaseFilter?: string[];
   conditionFilter?: string[];
   dryRun: boolean;
+  parallel: boolean;
   model?: string;
 }

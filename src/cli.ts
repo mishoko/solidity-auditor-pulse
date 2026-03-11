@@ -20,6 +20,7 @@ Options:
   --conditions <a,b>    Filter conditions (comma-separated ids)
   --model <model>       Claude model (e.g. opus, sonnet)
   --dry-run             Print commands without executing
+  --parallel            Run conditions concurrently per iteration
   --help                Show this help
 `);
 }
@@ -33,6 +34,7 @@ function main(): void {
       conditions: { type: 'string' },
       model: { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
+      parallel: { type: 'boolean', default: false },
       help: { type: 'boolean', default: false },
     },
     strict: true,
@@ -50,6 +52,7 @@ function main(): void {
     conditionFilter: values.conditions?.split(','),
     model: values.model,
     dryRun: values['dry-run']!,
+    parallel: values.parallel!,
   };
 
   if (opts.runsOverride !== undefined && (isNaN(opts.runsOverride) || opts.runsOverride < 1)) {

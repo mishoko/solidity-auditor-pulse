@@ -69,6 +69,7 @@ npm run build
 - `--runs <N>` — override number of iterations per condition (default: 1)
 - `--model <model>` — override Claude model
 - `--dry-run` — preview without spawning claude
+- `--parallel` — run all conditions concurrently per iteration (see Parallel Execution below)
 
 ### Conditions explained
 
@@ -94,6 +95,14 @@ npm run build
 ## Ground Truth
 
 Files in `ground_truth/<codebaseId>.json` define known bugs. When present, the summary table adds **Recall** (how many real bugs found) and **FPs** (false positives) rows, and marks FP findings with `(FP)`. Ground truth files are at the project root — invisible to Claude during runs.
+
+## Parallel Execution
+
+`--parallel` runs all conditions concurrently per iteration (~4x speedup). Iterations stay sequential. Rate limits may bite on large codebases — drop to sequential if throttled. See [docs/isolation-and-parallelism.md](docs/isolation-and-parallelism.md) for full isolation strategy, rate limit analysis, and design decisions.
+
+```bash
+npm run bench -- --codebases canary --runs 1 --parallel
+```
 
 ## Critical: Env Var Isolation
 

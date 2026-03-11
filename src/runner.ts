@@ -150,11 +150,33 @@ export async function runBench(config: BenchConfig, opts: CliOptions): Promise<R
 
   const results: RunMeta[] = [];
 
-  for (const codebase of codebases) {
-    for (const condition of conditions) {
+  if (opts.parallel && conditions.length > 1) {
+    log.info(`Parallel mode: ${conditions.length} conditions will run concurrently per iteration`);
+
+    for (const codebase of codebases) {
       for (let i = 1; i <= runs; i++) {
-        const meta = await runSingle(codebase, condition, i, opts);
-        results.push(meta);
+        log.separator();
+        log.info(`[PARALLEL] Starting iteration ${i} for ${codebase.id} — ${conditions.length} conditions`);
+        let completed = 0;
+
+        const promises = conditions.map(async (condition) => {
+          const meta = await runSingle(codebase, condition, i, opts);
+          completed++;
+          log.info(`[PARALLEL] ${condition.id} done (${completed}/${conditions.length})`);
+          return meta;
+        });
+
+        const iterResults = await Promise.all(promises);
+        results.push(...iterResults);
+      }
+    }
+  } else {
+    for (const codebase of codebases) {
+      for (const condition of conditions) {
+        for (let i = 1; i <= runs; i++) {
+          const meta = await runSingle(codebase, condition, i, opts);
+          results.push(meta);
+        }
       }
     }
   }

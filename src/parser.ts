@@ -34,8 +34,10 @@ const SKILL_LOCATION_RE = /^`([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)`\s+·/;
 const SKILL_TABLE_ROW_RE = /^\|\s*(\d+)\s*\|\s*\[(\d+)\]\s*\|\s*(.+?)\s*\|/;
 
 // --- Bare format parsing ---
-// Pattern: ##+ [SEVERITY] Title — Location (bare Claude uses variable header levels)
+// Pattern 1: ##+ [SEVERITY] Title — Location (bare Claude uses variable header levels)
 const BARE_FINDING_RE = /^#{2,4}\s+\[(CRITICAL|HIGH|MEDIUM|LOW|INFO)\]\s+(.+?)(?:\s+—\s+(.+))?$/i;
+// Pattern 2: ### H-1: Title, ### M-1: Title, ### L-1: Title (numbered severity prefix)
+const BARE_NUMBERED_RE = /^#{2,4}\s+(H|M|L|I)-\d+:\s+(.+?)(?:\s+—\s+(.+))?$/i;
 
 // --- Root cause normalization ---
 const VULN_KEYWORDS: [RegExp, string][] = [
@@ -107,7 +109,8 @@ export function parseOutput(text: string): ParseResult {
 
   // Detect format
   const hasSkillHeader = text.includes('🔐 Security Review') || text.includes('## Scope');
-  const hasBareHeader = /^#{2,4}\s+\[(CRITICAL|HIGH|MEDIUM|LOW)/im.test(text);
+  const hasBareHeader = /^#{2,4}\s+\[(CRITICAL|HIGH|MEDIUM|LOW)/im.test(text)
+    || /^#{2,4}\s+(H|M|L|I)-\d+:/im.test(text);
 
   if (hasSkillHeader) return parseSkillFormat(lines);
   if (hasBareHeader) return parseBareFormat(lines);
@@ -188,12 +191,18 @@ function parseBareFormat(lines: string[]): ParseResult {
       continue;
     }
 
+    // Match either [SEVERITY] or H-1:/M-1:/L-1: format
     const m = BARE_FINDING_RE.exec(line);
-    if (m) {
+    const m2 = m ? null : BARE_NUMBERED_RE.exec(line);
+    const match = m || m2;
+    if (match) {
       index++;
-      const severity = m[1].toUpperCase();
-      const title = m[2].trim();
-      const locStr = m[3] || null;
+      const sevMap: Record<string, string> = { H: 'HIGH', M: 'MEDIUM', L: 'LOW', I: 'INFO' };
+      const severity = m
+        ? m[1].toUpperCase()
+        : sevMap[m2![1].toUpperCase()] || m2![1].toUpperCase();
+      const title = match[2].trim();
+      const locStr = match[3] || null;
 
       // Try to extract location from title, fall back to current section contract
       let location = extractLocation(title, locStr);
