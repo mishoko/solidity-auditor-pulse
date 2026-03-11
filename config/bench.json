@@ -24,7 +24,7 @@
     {
       "id": "bare_audit",
       "type": "bare",
-      "prompt": "Perform a thorough security audit of all Solidity smart contracts in this repository. Identify vulnerabilities, and provide specific code references and remediation suggestions."
+      "prompt": "Do a security audit on the code"
     },
     {
       "id": "skill_v1_default",
