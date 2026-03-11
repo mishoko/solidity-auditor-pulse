@@ -20,10 +20,12 @@ ground_truth/       Known-bug answer keys per codebase (JSON, enables Recall/FP 
 
 `npm run bench` runs the full matrix (all codebases x all conditions x N runs). **This is expensive** — prefer filtered runs during development.
 
-1. Loads config from `config/bench.json`
-2. Prepares workspaces (one per codebase x skill version):
-   - **Skill runs**: `workspaces/<codebase>_<version>/code/` symlinks to `datasets/<codebase>`, `.claude/commands/` gets skill copy
-   - **Bare runs**: runs directly in `datasets/<codebase>/` (no workspace, no copy)
+1. ц `config/bench.json`
+2. Prepares workspaces (one per codebase × condition):
+   - Each condition gets its own workspace: `workspaces/<codebase>__<conditionId>/`
+   - Codebase files are **real copies** (not symlinks) from `datasets/`
+   - **Skill runs**: `.claude/commands/solidity-auditor/` installed with correct version
+   - **Bare runs**: no skill installed, just the codebase copy
 3. For each `(codebase, condition, iteration)`:
    - Spawns `claude -p "<prompt>"` in the resolved cwd (fresh process each time)
    - Bare runs add `--disable-slash-commands --setting-sources project,local`

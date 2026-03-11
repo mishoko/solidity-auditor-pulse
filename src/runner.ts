@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { BenchConfig, CliOptions, CodebaseConfig, ConditionConfig, RunMeta } from './types.js';
-import { getRunCwd, prepareSkillWorkspace, resolveGitCommit, cleanupWorkspaces } from './workspace.js';
+import { getRunCwd, prepareWorkspace, resolveGitCommit, cleanupWorkspaces } from './workspace.js';
 import { skillSrcPath, resolveSkillGitCommit } from './skill.js';
 import { spawnClaude } from './util/shell.js';
 import * as log from './util/logger.js';
@@ -37,10 +37,9 @@ async function runSingle(
   log.info(`Run: ${runId}`);
 
   // Resolve the cwd for this run
-  const skillVersion = condition.type === 'skill' ? condition.skillVersion : null;
   const cwd = opts.dryRun
-    ? `/workspaces/${codebase.id}_${skillVersion ?? 'bare'}/code`
-    : getRunCwd(codebase.id, codebase.path, skillVersion);
+    ? `/workspaces/${codebase.id}__${condition.id}`
+    : getRunCwd(codebase.id, condition.id);
 
   // Build the prompt
   let prompt: string;
@@ -121,31 +120,21 @@ export async function runBench(config: BenchConfig, opts: CliOptions): Promise<R
   const runs = opts.runsOverride ?? config.defaultRunsPerCondition;
   const total = codebases.length * conditions.length * runs;
 
-  // Prepare all skill workspaces upfront (one per codebase × skillVersion)
+  // Prepare all workspaces upfront (one per codebase × condition)
   if (!opts.dryRun) {
-    const skillVersions = new Set(
-      conditions
-        .filter((c): c is Extract<ConditionConfig, { type: 'skill' }> => c.type === 'skill')
-        .map(c => c.skillVersion)
-    );
-
     for (const codebase of codebases) {
-      for (const sv of skillVersions) {
-        const src = skillSrcPath(sv);
-        await prepareSkillWorkspace(codebase.id, codebase.path, sv, src);
+      for (const condition of conditions) {
+        const skillVersion = condition.type === 'skill' ? condition.skillVersion : null;
+        const skillSrc = skillVersion ? skillSrcPath(skillVersion) : null;
+        await prepareWorkspace(
+          codebase.id, codebase.path, condition.id, skillVersion, skillSrc,
+        );
       }
     }
   }
 
-  const bareCount = conditions.filter(c => c.type === 'bare').length * codebases.length * runs;
-  const skillCount = total - bareCount;
   log.info(
     `Benchmark: ${codebases.length} codebases × ${conditions.length} conditions × ${runs} runs = ${total} total`
-  );
-  log.info(
-    `Workspaces: ${bareCount > 0 ? `${bareCount} bare (no copy)` : ''}` +
-    `${bareCount > 0 && skillCount > 0 ? ' + ' : ''}` +
-    `${skillCount > 0 ? `${skillCount} skill (shared symlinked workspaces)` : ''}`
   );
 
   const results: RunMeta[] = [];

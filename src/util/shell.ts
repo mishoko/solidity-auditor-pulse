@@ -32,11 +32,13 @@ export async function spawnClaude(opts: SpawnClaudeOptions): Promise<{ exitCode:
     )
   );
 
+  // Block user-level settings/commands for ALL runs to prevent ~/.claude/commands/
+  // from leaking in (wrong skill version) or user CLAUDE.md from influencing results.
+  args.push('--setting-sources', 'project,local');
+
   if (opts.bare) {
-    // Disable all skills/commands so bare Claude can't invoke the auditor skill.
-    // Also skip user-level settings (memory, CLAUDE.md, custom settings).
+    // Also disable all skills/commands so bare Claude can't invoke any skill.
     args.push('--disable-slash-commands');
-    args.push('--setting-sources', 'project,local');
     log.info('Bare mode: slash commands disabled, user settings skipped');
   }
 
@@ -51,14 +53,21 @@ export async function spawnClaude(opts: SpawnClaudeOptions): Promise<{ exitCode:
 
   child.stdout.pipe(outStream);
 
+  // Capture stderr to a .stderr.txt file alongside stdout for diagnostics.
+  // Also mirror to process stderr for live visibility.
+  const stderrPath = opts.outputPath.replace(/\.stdout\.txt$/, '.stderr.txt');
+  const stderrStream = fs.createWriteStream(stderrPath, { encoding: 'utf8' });
   child.stderr.on('data', (chunk: Buffer) => {
-    process.stderr.write(`[claude stderr] ${chunk.toString()}`);
+    const text = chunk.toString();
+    stderrStream.write(text);
+    process.stderr.write(`[claude stderr] ${text}`);
   });
 
   return new Promise((resolve, reject) => {
     child.on('error', reject);
     child.on('close', (code) => {
       outStream.end();
+      stderrStream.end();
       resolve({ exitCode: code ?? -1, durationMs: Date.now() - start });
     });
   });
