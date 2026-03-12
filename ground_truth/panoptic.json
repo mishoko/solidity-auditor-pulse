@@ -1,0 +1,314 @@
+{
+  "codebaseId": "panoptic",
+  "source": "Code4rena — December 19, 2025 to January 7, 2026",
+  "reportUrl": "ground_truth/reports/panoptic.md",
+  "description": "Panoptic options protocol — 12 contracts, 6356 nSLOC",
+  "findings": [
+    {
+      "id": "H-01",
+      "severity": "high",
+      "title": "BuilderWallet init() is unprotected/re-initializable, enabling takeover and theft of builder fees",
+      "rootCause": "RiskEngine::no-access-control-on-init",
+      "location": "RiskEngine.BuilderWallet.init",
+      "line": 2315,
+      "description": "BuilderWallet.init() has no access control and no only-once guard, allowing any attacker to overwrite builderAdmin and then call sweep() to drain all ERC20 balances held by any builder wallet."
+    },
+    {
+      "id": "H-02",
+      "severity": "high",
+      "title": "Cross-contract reentrancy in liquidation enables conversion of phantom shares to real shares, draining CollateralTracker assets",
+      "rootCause": "CollateralTracker::cross-contract-reentrancy",
+      "location": "CollateralTracker.settleLiquidation",
+      "line": 1359,
+      "description": "During liquidation, settleLiquidation performs an external ETH refund call before the other token's settlement completes, opening a reentrancy window where a malicious liquidator can transfer phantom shares via transferFrom and later have them validated as real shares by the revoke logic, draining vault assets."
+    },
+    {
+      "id": "H-03",
+      "severity": "high",
+      "title": "Commission fees can always be bypassed",
+      "rootCause": "CollateralTracker::commission-bypass-via-settle-then-burn",
+      "location": "CollateralTracker.settleBurn",
+      "line": 1595,
+      "description": "When settleBurn is called from _settleOptions, longAmount/shortAmount/ammDeltaAmount are all 0, making the notional fee 0 and the commission 0. Additionally, settleBurn skips commission when realizedPremium==0. Users can avoid all commission fees by settling premium first, then burning."
+    },
+    {
+      "id": "M-01",
+      "severity": "medium",
+      "title": "Liquidations can be permanently blocked via getLiquidationBonus() unsigned underflow",
+      "rootCause": "RiskEngine::unsigned-underflow-in-liquidation-bonus",
+      "location": "RiskEngine.getLiquidationBonus",
+      "line": 495,
+      "description": "getLiquidationBonus computes thresholdCross - balanceCross in unsigned arithmetic, but when cross-margining is disabled by high utilization, balanceCross can exceed thresholdCross even though the account is insolvent per-token, causing an underflow revert that permanently blocks liquidation."
+    },
+    {
+      "id": "M-02",
+      "severity": "medium",
+      "title": "RiskEngine fails to accumulate credits across multiple legs, leading to erroneous liquidations",
+      "rootCause": "RiskEngine::credits-overwrite-instead-of-accumulate",
+      "location": "RiskEngine._getRequiredCollateralAtTickSinglePosition",
+      "line": 1324,
+      "description": "When a tokenId has multiple width==0 long legs, the credits variable is overwritten on each iteration instead of being accumulated, causing only the last leg's credit to be counted. This undercounts user margin, potentially triggering unjustified liquidations."
+    },
+    {
+      "id": "M-03",
+      "severity": "medium",
+      "title": "TWAP misweights EMAs in RiskEngine, anchoring liquidation price to slow EMA",
+      "rootCause": "RiskEngine::ema-destructuring-order-mismatch",
+      "location": "RiskEngine.twapEMA",
+      "line": 836,
+      "description": "twapEMA destructures getEMAs() as (eonsEMA, slowEMA, fastEMA) but getEMAs() returns (spotEMA, fastEMA, slowEMA, eonsEMA, medianTick). The intended 60/30/10 fast/slow/eons weighting becomes 60% slow, 30% fast, 10% spot, ignoring the eons EMA. This anchors the TWAP to stale prices, blocking liquidation of unhealthy accounts."
+    },
+    {
+      "id": "M-04",
+      "severity": "medium",
+      "title": "Incorrect UPPER_118BITS_MASK causes clearing of EMAs and lockMode in OraclePack",
+      "rootCause": "OraclePack::incorrect-bitmask-length",
+      "location": "OraclePack.rebaseOraclePack",
+      "line": 64,
+      "description": "UPPER_118BITS_MASK is only 128 bits long instead of the needed 138 bits. When rebaseOraclePack uses this mask, it inadvertently clears the EMAs and lockMode data, compromising oracle integrity."
+    },
+    {
+      "id": "M-05",
+      "severity": "medium",
+      "title": "Division-by-zero in long-leg collateral requirement blocks solvency checks for tickSpacing==1 pools",
+      "rootCause": "RiskEngine::division-by-zero-long-leg",
+      "location": "RiskEngine._getRequiredCollateralSingleLegNoPartner",
+      "line": 1508,
+      "description": "For tickSpacing==1 pools with width==1 long legs, distanceFromStrike becomes max(0, 0)=0 when atTick==strike, causing a division-by-zero revert that blocks liquidation and force-exercise at specific prices."
+    },
+    {
+      "id": "M-06",
+      "severity": "medium",
+      "title": "dispatchFrom() liveness DoS via StaleOracle: spot price manipulation blocks liquidations",
+      "rootCause": "PanopticPool::stale-oracle-blocks-all-dispatchFrom",
+      "location": "PanopticPool.dispatchFrom",
+      "line": 1388,
+      "description": "dispatchFrom unconditionally reverts with StaleOracle when currentTick deviates more than tickDeltaLiquidation from the TWAP, blocking all liquidations, force exercises, and premium settlements. Attackers can front-run liquidations with price manipulation to trigger this revert indefinitely."
+    },
+    {
+      "id": "M-07",
+      "severity": "medium",
+      "title": "Liquidator can receive inflated bonus against PLPs due to commission exclusion from tokenPaid",
+      "rootCause": "CollateralTracker::commission-excluded-from-tokenPaid",
+      "location": "CollateralTracker.settleBurn",
+      "line": 1595,
+      "description": "settleBurn returns tokenPaid before commission shares are burned, so the amount does not reflect commission costs. PanopticPool._liquidate uses this understated netPaid to compute the liquidation bonus, resulting in an overstated bonus at PLPs' expense."
+    },
+    {
+      "id": "M-08",
+      "severity": "medium",
+      "title": "Wide-range short legs can revert solvency checks and block liquidations (InvalidTick)",
+      "rootCause": "RiskEngine::out-of-domain-sqrt-ratio-tick",
+      "location": "RiskEngine._getRequiredCollateralSingleLegNoPartner",
+      "line": 1495,
+      "description": "Short legs with tickUpper-tickLower > 887272 cause getSqrtRatioAtTick to revert with InvalidTick when the in-range interpolation path is taken, bricking solvency checks and liquidation for those accounts."
+    },
+    {
+      "id": "M-09",
+      "severity": "medium",
+      "title": "Incorrect collateral calculation for delayed swap strategies uses max instead of netting",
+      "rootCause": "RiskEngine::delayed-swap-max-instead-of-netting",
+      "location": "RiskEngine._computeDelayedSwap",
+      "line": 2035,
+      "description": "_computeDelayedSwap uses max(loanRequirement, creditValue) instead of subtracting the credit from the loan requirement. This treats the credit as a liability floor rather than a deduction, inflating collateral requirements and causing unfair liquidations for delayed swap strategies."
+    },
+    {
+      "id": "M-10",
+      "severity": "medium",
+      "title": "PLPs can withdraw assets needed by long positions, temporarily locking buyers",
+      "rootCause": "CollateralTracker::unreserved-long-position-assets",
+      "location": "CollateralTracker.maxWithdraw",
+      "line": 651,
+      "description": "maxWithdraw allows LPs to withdraw up to s_depositedAssets-1, but assets pulled from the AMM by long positions increase s_depositedAssets without being reserved. LPs can drain available liquidity, preventing longs from closing their positions."
+    },
+    {
+      "id": "M-11",
+      "severity": "medium",
+      "title": "Oracle can be manipulated via frontrunning pokeOracle with flash loans",
+      "rootCause": "OraclePack::single-update-per-epoch-frontrunnable",
+      "location": "OraclePack.computeInternalMedian",
+      "line": 536,
+      "description": "pokeOracle is publicly callable and the oracle only updates once per 64-second epoch. An attacker can frontrun legitimate oracle updates by manipulating the pool price with flash loans and calling pokeOracle, locking in a manipulated tick for the entire epoch. Repeated across epochs, the oracle can be gradually shifted by up to 149 ticks per epoch."
+    },
+    {
+      "id": "M-12",
+      "severity": "medium",
+      "title": "Self-settlement via dispatchFrom bypasses refund mechanism allowing underfunded debt settlement",
+      "rootCause": "PanopticPool::self-refund-no-real-value-injected",
+      "location": "PanopticPool._settlePremium",
+      "line": 1671,
+      "description": "When account==msg.sender in _settlePremium or _forceExercise, the refund mechanism becomes a self-transfer that injects no real value. Combined with phantom share inflation from delegate(), settlement succeeds even when the user lacks sufficient balance, leaving a shortage that is never funded."
+    },
+    {
+      "id": "M-13",
+      "severity": "medium",
+      "title": "Intra-epoch rateAtTarget updates allow compounding interest rate errors",
+      "rootCause": "CollateralTracker::rate-updated-without-epoch-guard",
+      "location": "CollateralTracker._updateInterestRate",
+      "line": 1047,
+      "description": "_accrueInterest updates s_marketState.rateAtTarget on every call even within the same epoch, but marketEpoch only advances when deltaTime>0. This allows compounding rate errors within a 4-second window, manipulable by triggering _accrueInterest multiple times in one block at high utilization."
+    },
+    {
+      "id": "M-14",
+      "severity": "medium",
+      "title": "State-price mismatch in liquidation: stale assets vs fresh debt valuation",
+      "rootCause": "PanopticPool::stale-unrealized-interest-in-liquidation",
+      "location": "CollateralTracker.assetsAndInterest",
+      "line": 1091,
+      "description": "assetsAndInterest uses stale unrealizedInterest for asset valuation but simulates fresh borrowIndex for debt. This underestimates the liquidatee's net worth, overstating protocol loss and triggering unnecessary haircutPremia against honest sellers."
+    },
+    {
+      "id": "M-15",
+      "severity": "medium",
+      "title": "Commission share-burn distribution is JIT-capturable when builderCode==0",
+      "rootCause": "CollateralTracker::jit-capturable-share-burn",
+      "location": "CollateralTracker.settleMint",
+      "line": 1558,
+      "description": "When feeRecipient==address(0) (default builderCode==0), commissions are implemented as share burns that instantly increase assetsPerShare. MEV searchers can JIT-deposit before burn events to capture most of the value. Critical protocol paths like liquidation and force-exercise hardcode getRiskParameters(0), making this actively triggerable."
+    },
+    {
+      "id": "M-16",
+      "severity": "medium",
+      "title": "Force exercise lacks caller-side bounds for exercise fee",
+      "rootCause": "PanopticPool::no-max-fee-bound-on-force-exercise",
+      "location": "PanopticPool._forceExercise",
+      "line": 1598,
+      "description": "The force exercise path computes exerciseCost and settles it without any caller-provided bounds on maximum payment. Because the fee depends on currentTick and twapTick, the final amount can change between submission and execution, exposing callers to unexpected costs."
+    },
+    {
+      "id": "M-17",
+      "severity": "medium",
+      "title": "High divergence check in isSafeMode is unreachable dead code",
+      "rootCause": "RiskEngine::unreachable-divergence-threshold",
+      "location": "RiskEngine.isSafeMode",
+      "line": 929,
+      "description": "The highDivergence check comparing |medianTick - slowEMA| > 1906 ticks is mathematically unreachable because both values use the same clamped input (max 149 ticks/epoch). Maximum achievable divergence is ~875-935 ticks, making the 1906-tick threshold dead code that provides a false sense of security."
+    },
+    {
+      "id": "M-18",
+      "severity": "medium",
+      "title": "Solvency tick divergence blind spot in getSolvencyTicks due to symmetric tick bypass",
+      "rootCause": "RiskEngine::euclidean-norm-symmetric-bypass",
+      "location": "RiskEngine.getSolvencyTicks",
+      "line": 962,
+      "description": "getSolvencyTicks uses a 3D squared-Euclidean-norm gate that can be bypassed with symmetric tick configurations where spot and current ticks are on opposite sides of the median. This allows single-tick solvency evaluation even when |spotTick-currentTick| significantly exceeds MAX_TICKS_DELTA, missing insolvency at the actual current price."
+    },
+    {
+      "id": "M-19",
+      "severity": "medium",
+      "title": "Withdrawing before bad debt event concentrates losses on remaining LPs",
+      "rootCause": "CollateralTracker::front-runnable-bad-debt-socialization",
+      "location": "CollateralTracker.settleLiquidation",
+      "line": 1262,
+      "description": "LPs can withdraw just before bad debt socialization during liquidation, avoiding the loss entirely and concentrating it on remaining LPs. When the liquidatee cannot cover the bonus, new shares are minted to the liquidator, diluting only those who remain."
+    },
+    {
+      "id": "L-01",
+      "severity": "low",
+      "title": "validateCollateralWithdrawable hardcodes safeMode=0, bypassing stricter collateral requirements",
+      "rootCause": "PanopticPool::hardcoded-safemode-zero",
+      "location": "PanopticPool.validateCollateralWithdrawable",
+      "line": 409,
+      "description": "validateCollateralWithdrawable hardcodes safeMode=0 instead of using the actual safe mode level from riskParameters. During volatile conditions when safeMode>0, users can withdraw more collateral than intended because utilization-based restrictions are not enforced."
+    },
+    {
+      "id": "L-02",
+      "severity": "low",
+      "title": "Missing zero shares check in deposit() allows users to lose deposited assets",
+      "rootCause": "CollateralTracker::zero-shares-on-deposit",
+      "location": "CollateralTracker.deposit",
+      "line": 557,
+      "description": "deposit() validates assets!=0 but not that the resulting shares from previewDeposit() are non-zero. When assets*totalSupply < totalAssets due to share price appreciation, the deposit rounds to zero shares, permanently losing the user's assets."
+    },
+    {
+      "id": "L-03",
+      "severity": "low",
+      "title": "CommissionPaid event emits protocolSplit instead of builderSplit for builder parameter",
+      "rootCause": "CollateralTracker::wrong-event-parameter",
+      "location": "CollateralTracker.settleMint",
+      "line": 1573,
+      "description": "The CommissionPaid event uses protocolSplit() for both the protocol and builder commission parameters instead of using builderSplit() for the fourth parameter. Actual token transfers are correct but event data is wrong, misleading off-chain indexers."
+    },
+    {
+      "id": "L-04",
+      "severity": "low",
+      "title": "unlockPool emits GuardianSafeModeUpdated(true) instead of false when lifting the lock",
+      "rootCause": "RiskEngine::wrong-event-value-on-unlock",
+      "location": "RiskEngine.unlockPool",
+      "line": 243,
+      "description": "unlockPool() emits GuardianSafeModeUpdated(true) instead of false, a copy-paste error from lockPool(). Off-chain monitoring tools will incorrectly show the pool as locked when it has been unlocked."
+    },
+    {
+      "id": "L-05",
+      "severity": "low",
+      "title": "Redundant memory copy of premiasByLeg inside loop in haircutPremia wastes gas",
+      "rootCause": "RiskEngine::redundant-memory-copy-in-loop",
+      "location": "RiskEngine.haircutPremia",
+      "line": 620,
+      "description": "haircutPremia creates a new memory copy of the entire premiasByLeg array on every outer loop iteration. Since the copy is only read and never modified, this wastes gas proportional to positionIdList.length * premiasByLeg.length during liquidations."
+    },
+    {
+      "id": "L-06",
+      "severity": "low",
+      "title": "onERC1155Received accepts tokens from any ERC1155 contract without sender validation",
+      "rootCause": "PanopticPool::unrestricted-erc1155-receiver",
+      "location": "PanopticPool.onERC1155Received",
+      "line": 377,
+      "description": "onERC1155Received unconditionally returns the success selector without validating that msg.sender is the canonical SFPM contract, allowing arbitrary ERC1155 tokens to be sent to and permanently stuck in the PanopticPool."
+    },
+    {
+      "id": "L-07",
+      "severity": "low",
+      "title": "deposit() and mint() are payable but do not refund ETH for ERC20 collateral",
+      "rootCause": "CollateralTracker::trapped-eth-on-erc20-deposit",
+      "location": "CollateralTracker.deposit",
+      "line": 557,
+      "description": "deposit() and mint() are payable to support native ETH collateral in V4 pools, but when the underlying is ERC20, any ETH sent is silently accepted and permanently trapped with no refund or revert mechanism."
+    },
+    {
+      "id": "L-08",
+      "severity": "low",
+      "title": "Median tick calculation rounds toward zero instead of floor for negative values",
+      "rootCause": "OraclePack::truncation-rounding-bias",
+      "location": "OraclePack.getMedianTick",
+      "line": 409,
+      "description": "getMedianTick averages rank3 and rank4 using Solidity integer division which rounds toward zero. For negative odd sums this creates a systematic +1 tick bias compared to floor rounding, introducing asymmetric behavior in the oracle."
+    },
+    {
+      "id": "L-09",
+      "severity": "low",
+      "title": "TokenId validation allows riskPartner to reference inactive leg when index is 0",
+      "rootCause": "TokenId::risk-partner-inactive-leg-bypass",
+      "location": "TokenId.validate",
+      "line": 473,
+      "description": "validate() checks that risk partners are mutual but does not verify the riskPartner index points to an active leg. Leg 0 can set riskPartner to an inactive leg index, and the mutuality check passes because inactive legs return 0 for riskPartner. Practical impact is limited by downstream optionRatio checks."
+    },
+    {
+      "id": "L-10",
+      "severity": "low",
+      "title": "Guardian lockMode not enforced in getSolvencyTicks allows weaker solvency checks during emergency",
+      "rootCause": "RiskEngine::lockmode-not-checked-in-solvency-ticks",
+      "location": "RiskEngine.getSolvencyTicks",
+      "line": 947,
+      "description": "getSolvencyTicks determines whether to use 1 or 4 tick solvency checks based solely on a 3D norm calculation, completely ignoring the guardian's lockMode. During an emergency lock, solvency checks may still use a single tick, weakening protection contrary to the guardian's intent."
+    },
+    {
+      "id": "L-11",
+      "severity": "low",
+      "title": "TARGET_UTILIZATION NatSpec incorrectly states 90% instead of 66.67%",
+      "rootCause": "RiskEngine::incorrect-natspec-comment",
+      "location": "RiskEngine.TARGET_UTILIZATION",
+      "line": 175,
+      "description": "The NatSpec comment says target utilization is 90%, but the actual value 2 ether / int256(3) equals ~66.67%. Misleading documentation for developers and auditors."
+    },
+    {
+      "id": "L-12",
+      "severity": "low",
+      "title": "NatSpec in Math.sol incorrectly documents boundary conditions for getAmountsForLiquidity",
+      "rootCause": "Math::incorrect-natspec-boundary-conditions",
+      "location": "Math.getAmount0ForLiquidityUp",
+      "line": 300,
+      "description": "NatSpec says currentTick < tickLower and currentTick > tickUpper, but the implementation uses <= and >= respectively. Documentation contradicts the actual Uniswap V3-aligned boundary logic."
+    }
+  ]
+}

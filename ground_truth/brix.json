@@ -1,0 +1,89 @@
+{
+  "codebaseId": "brix",
+  "source": "Code4rena — November 26 to December 3, 2025",
+  "reportUrl": "ground_truth/reports/brix.md",
+  "description": "Brix Money / iTRY token system — 15 contracts, 1324 nSLOC",
+  "findings": [
+    {
+      "id": "M-01",
+      "severity": "medium",
+      "title": "User can bypass staking restrictions through composer and deposit on another chain",
+      "rootCause": "vaultcomposer::missing-restriction-check",
+      "location": "wiTryVaultComposer._depositAndSend (via VaultComposerSync._deposit)",
+      "line": 237,
+      "description": "SOFT_RESTRICTED_STAKER_ROLE check is on the composer address (address(this)), not the actual depositor. Restricted users route through wiTryOFTAdapter → LayerZero → wiTryVaultComposer to bypass restrictions. Vulnerable code in VaultComposerSync library, inherited by in-scope wiTryVaultComposer."
+    },
+    {
+      "id": "M-02",
+      "severity": "medium",
+      "title": "Cross-chain unstake and fast redeem fail due to LayerZero dust removal",
+      "rootCause": "vaultcomposer::minAmountLD-dust",
+      "location": "wiTryVaultComposer._handleUnstake",
+      "line": 268,
+      "description": "minAmountLD set equal to amountLD. LayerZero _removeDust truncates amounts not divisible by 1e12, causing SlippageExceeded revert. Affects ~69% of real-world amounts. Also in _fastRedeem at line 116-117."
+    },
+    {
+      "id": "M-03",
+      "severity": "medium",
+      "title": "Incompatibility with AA wallets and multisigs due to enforced address symmetry in cross chain unstaking",
+      "rootCause": "unstakemessenger::hardcoded-recipient",
+      "location": "UnstakeMessenger.unstake",
+      "line": 120,
+      "description": "user field hardcoded to msg.sender. On hub chain, assets sent to same address. Multisigs/AA wallets with different addresses across chains permanently lose assets."
+    },
+    {
+      "id": "L-01",
+      "severity": "low",
+      "title": "unstakeThroughComposer lacks cooldownDuration == 0 bypass causing inconsistent behavior for cross-chain users when admin disables cooldown",
+      "rootCause": "stakeditrycrosschain::missing-cooldown-bypass",
+      "location": "StakediTryCrosschain.unstakeThroughComposer",
+      "line": 89,
+      "description": "Missing '|| cooldownDuration == 0' check present in base unstake(). When admin disables cooldown, cross-chain users still wait up to 90 days while local users claim immediately."
+    },
+    {
+      "id": "L-02",
+      "severity": "low",
+      "title": "Missing access control in FastAccessVault.rebalanceFunds() enables griefing attacks",
+      "rootCause": "fastaccessvault::missing-onlyowner",
+      "location": "FastAccessVault.rebalanceFunds",
+      "line": 165,
+      "description": "Function is external without onlyOwner modifier despite interface specifying 'only callable by owner'. Anyone can trigger, enabling liquidity griefing by repeatedly forcing excess back to custodian."
+    },
+    {
+      "id": "L-03",
+      "severity": "low",
+      "title": "FULL_RESTRICTED_STAKER_ROLE users can bypass access controls via composer-created cooldowns",
+      "rootCause": "stakeditrycrosschain::composer-no-redeemer-check",
+      "location": "StakediTryCrosschain._startComposerCooldown",
+      "line": 170,
+      "description": "_withdraw validates composer (caller/receiver/owner) not redeemer. Fully restricted users get cooldown entitlements and later call unstake() which has no role checks."
+    },
+    {
+      "id": "L-04",
+      "severity": "low",
+      "title": "burnExcessITry() burns from admin's balance instead of target address",
+      "rootCause": "itryissuer::burn-from-sender",
+      "location": "iTryIssuer.burnExcessITry",
+      "line": 385,
+      "description": "_burn(msg.sender, iTRYAmount) requires admin to hold the tokens. No parameter to specify a different address — two transactions needed instead of one for emergency burns."
+    },
+    {
+      "id": "L-05",
+      "severity": "low",
+      "title": "Blacklist mechanism enables owner to confiscate user funds via redistributeLockedAmount()",
+      "rootCause": "stakeditry::confiscation",
+      "location": "StakediTry.redistributeLockedAmount",
+      "line": 168,
+      "description": "Admin can blacklist any user then mint their entire wiTRY balance to arbitrary address. Goes beyond freeze — enables full confiscation without recourse."
+    },
+    {
+      "id": "L-06",
+      "severity": "low",
+      "title": "YieldForwarder.rescueToken() lacks protection against rescuing yieldToken, enabling owner to divert yield",
+      "rootCause": "yieldforwarder::rescue-yieldtoken",
+      "location": "YieldForwarder.rescueToken",
+      "line": 156,
+      "description": "No check for token == address(yieldToken). Owner can divert yield funds. Inconsistent with StakediTry.rescueTokens which explicitly blocks rescuing the asset."
+    }
+  ]
+}

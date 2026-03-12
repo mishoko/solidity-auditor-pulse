@@ -1,0 +1,108 @@
+{
+  "codebaseId": "ekubo",
+  "source": "Code4rena — November 19 to December 10, 2025",
+  "reportUrl": "ground_truth/reports/ekubo.md",
+  "description": "Ekubo DEX/AMM system — 92 contracts, 6283 nSLOC",
+  "findings": [
+    {
+      "id": "M-01",
+      "severity": "medium",
+      "title": "Oracle Data Corruption via Storage Key Collision",
+      "rootCause": "oracle::storage-key-collision",
+      "location": "Oracle.maybeInsertSnapshot",
+      "line": 95,
+      "description": "Oracle stores Counts at slot(token) and Snapshots at slot(token << 32 | index). If tokenA == (tokenB << 32), initializing a pool for tokenA overwrites Snapshot[tokenB][0] with Counts data, corrupting oracle history and breaking TWAP/price consumers like ERC7726 and PriceFetcher."
+    },
+    {
+      "id": "M-02",
+      "severity": "medium",
+      "title": "TWAMM Instant Orders Can Steal Historical Rewards",
+      "rootCause": "twamm::start-time-not-registered",
+      "location": "TWAMM.handleForwardData",
+      "line": 271,
+      "description": "When block.timestamp == startTime, the else branch at line 274 only registers endTime via _updateTime, never startTime. This leaves rewardRatesBeforeSlot[startTime] uninitialized (0), causing getRewardRateInside to return all historical rewards instead of only the order's share, enabling fund theft from legitimate order holders."
+    },
+    {
+      "id": "M-03",
+      "severity": "medium",
+      "title": "Wrong rounding direction in DurationRemaining leads to value loss from TWAMM extension and Temporarily Freezing of a Pool",
+      "rootCause": "twamm::wrong-rounding-direction",
+      "location": "TWAMM.handleForwardData",
+      "line": 312,
+      "description": "remainingSellAmount uses roundUp: true when calculating the refund on order cancellation, causing 1 wei over-refund per cancellation. An attacker creating many small orders and canceling them accumulates debt in the extension, eventually causing SavedBalanceOverflow revert that freezes the pool."
+    },
+    {
+      "id": "M-04",
+      "severity": "medium",
+      "title": "Router does not check if Exact Out Single Swap was partial leading to unexpected results for the users",
+      "rootCause": "router::missing-partial-fill-check",
+      "location": "Router.handleLockData",
+      "line": 94,
+      "description": "For single exact-out swaps, the Router only validates amountCalculated >= calculatedAmountThreshold (input cost check) but never verifies the output amount matches the requested amount. If the pool has insufficient liquidity or hits sqrtRatioLimit, the swap partially fills and the user receives less output than intended without the transaction reverting."
+    },
+    {
+      "id": "L-01",
+      "severity": "low",
+      "title": "Missing Zero Liquidity Check in deposit()",
+      "rootCause": "basepositions::no-zero-liquidity-check",
+      "location": "BasePositions.deposit",
+      "line": 71,
+      "description": "deposit() does not validate that calculated liquidity is greater than zero before proceeding. If minLiquidity is set to 0, users can waste gas on no-op deposits that add zero liquidity to a position."
+    },
+    {
+      "id": "L-02",
+      "severity": "low",
+      "title": "TWAMM Ghost Orders - SaleRate Rounding to Zero",
+      "rootCause": "twamm-math::saleRate-rounds-to-zero",
+      "location": "computeAmountFromSaleRate",
+      "line": 42,
+      "description": "computeAmountFromSaleRate uses (saleRate * duration) >> 32, which rounds to zero for small saleRate values (< 2^32). Orders with such rates consume gas and occupy time slots during virtual order execution but never actually sell any tokens."
+    },
+    {
+      "id": "L-03",
+      "severity": "low",
+      "title": "Missing Calldata Length Validation in withdraw()",
+      "rootCause": "flashaccountant::no-calldata-alignment-check",
+      "location": "FlashAccountant.withdraw",
+      "line": 322,
+      "description": "withdraw() iterates calldata in 56-byte chunks (20 token + 20 recipient + 16 amount) but does not validate that (calldatasize - 4) is divisible by 56. Misaligned calldata causes the function to read incorrect token addresses, recipients, or amounts from shifted byte positions."
+    },
+    {
+      "id": "L-04",
+      "severity": "low",
+      "title": "Oracle Circular Array Boundary Handling",
+      "rootCause": "oracle::circular-array-boundary",
+      "location": "Oracle._binarySearch",
+      "line": 250,
+      "judgeVerdict": "verified-safe",
+      "description": "Circular array index calculation in _binarySearch assembly uses mod(add(cardinality, startIndex), cardinality). Warden analyzed for potential boundary overflow — judge marked as verified safe. Included for completeness; tools that flag this may be over-reporting."
+    },
+    {
+      "id": "L-05",
+      "severity": "low",
+      "title": "Redundant authorizedForNft Modifier in collectFees()",
+      "rootCause": "basepositions::redundant-auth-check",
+      "location": "BasePositions.collectFees",
+      "line": 100,
+      "description": "The collectFees(id, poolKey, tickLower, tickUpper) wrapper applies authorizedForNft(id) then delegates to the overloaded collectFees which also applies the same modifier, resulting in a redundant ownerOf() check that wastes approximately 100-200 gas per call."
+    },
+    {
+      "id": "L-06",
+      "severity": "low",
+      "title": "UpdateDebt() Comment Mismatch",
+      "rootCause": "flashaccountant::misleading-comment",
+      "location": "FlashAccountant.updateDebt",
+      "line": 132,
+      "description": "updateDebt() expects exactly 20 bytes of calldata (4-byte selector + 16-byte int128 delta) but the inline comments do not clearly document this packed calldata layout, potentially confusing integrators."
+    },
+    {
+      "id": "L-07",
+      "severity": "low",
+      "title": "Pool Initialization Check Delegated to Core",
+      "rootCause": "basepositions::no-explicit-init-check",
+      "location": "BasePositions.deposit",
+      "line": 80,
+      "description": "deposit() reads sqrtRatio from the pool state but does not explicitly check for zero (uninitialized pool). It relies on Core.sol to revert downstream with PoolNotInitialized, giving users unclear error messages when interacting with uninitialized pools."
+    }
+  ]
+}
