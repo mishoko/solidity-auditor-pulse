@@ -45,6 +45,7 @@ export interface RunMeta {
   claudeCliVersion?: string;
   exitCode: number;
   durationMs: number;
+  timedOut?: boolean;
 }
 
 export interface CliOptions {

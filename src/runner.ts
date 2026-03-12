@@ -4,6 +4,7 @@ import type { BenchConfig, CliOptions, CodebaseConfig, ConditionConfig, RunMeta 
 import { getRunCwd, prepareWorkspace, resolveGitCommit, cleanupWorkspaces } from './workspace.js';
 import { skillSrcPath, resolveSkillGitCommit } from './skill.js';
 import { spawnClaude } from './util/shell.js';
+import { verifyRun, printVerifyResults, type VerifyResult } from './verify.js';
 import * as log from './util/logger.js';
 
 const ROOT = process.cwd();
@@ -54,13 +55,14 @@ async function runSingle(
 
   // Spawn claude
   const outputPath = path.join(ROOT, 'results', `${runId}.stdout.txt`);
-  const { exitCode, durationMs } = await spawnClaude({
+  const { exitCode, durationMs, timedOut } = await spawnClaude({
     cwd,
     prompt,
     model: opts.model,
     outputPath,
     dryRun: opts.dryRun,
     bare: condition.type === 'bare',
+    label: condition.id,
   });
 
   // Build metadata
@@ -86,6 +88,7 @@ async function runSingle(
     claudeCliVersion,
     exitCode,
     durationMs,
+    timedOut,
   };
 
   // Write metadata (skip for dry runs — no real output to pair with)
@@ -94,7 +97,9 @@ async function runSingle(
     fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
   }
 
-  if (exitCode === 0) {
+  if (timedOut) {
+    log.error(`TIMED OUT after ${(durationMs / 1000).toFixed(1)}s`);
+  } else if (exitCode === 0) {
     log.success(`Completed in ${(durationMs / 1000).toFixed(1)}s → results/${runId}.stdout.txt`);
   } else {
     log.error(`Exit code ${exitCode} after ${(durationMs / 1000).toFixed(1)}s`);
@@ -178,6 +183,14 @@ export async function runBench(config: BenchConfig, opts: CliOptions): Promise<R
   log.separator();
   const passed = results.filter(r => r.exitCode === 0).length;
   log.info(`Done: ${passed}/${total} runs succeeded`);
+
+  // Post-run verification (skip for dry runs)
+  if (!opts.dryRun) {
+    const verifyResults: VerifyResult[] = results.map(meta =>
+      verifyRun(meta, path.join(ROOT, 'results'))
+    );
+    printVerifyResults(verifyResults);
+  }
 
   return results;
 }

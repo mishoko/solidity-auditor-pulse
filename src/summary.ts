@@ -1,10 +1,14 @@
 /**
  * Reads all results/*.meta.json + *.stdout.txt, parses findings,
- * normalizes root causes, and generates a comparison markdown table.
+ * and generates a comparison markdown table.
  *
  * Column order: V2, V1 default, V1 deep, CC bare
  * Rows grouped by iteration (Run 1, Run 2, …)
- * If ground_truth/<codebaseId>.json exists, adds a Recall row.
+ * If ground_truth/<codebaseId>.json exists, adds Recall and FP rows.
+ *
+ * INVARIANT: every parsed finding appears as its own row. No silent merging.
+ * Cross-condition matching uses rootCause key (contract::function).
+ * Ground truth matching uses flexible logic (vuln type + contract).
  */
 
 import * as fs from 'node:fs';
@@ -50,6 +54,15 @@ function loadRuns(resultsDir: string): RunData[] {
 
     const text = fs.readFileSync(stdoutFile, 'utf8');
     const parse = parseOutput(text);
+
+    // Validation: warn if parsed count doesn't match reported count
+    if (parse.reportedCount !== null && parse.findings.length !== parse.reportedCount) {
+      log.warn(
+        `Parse mismatch in ${meta.runId}: parsed ${parse.findings.length} findings ` +
+        `but report lists ${parse.reportedCount}. Check parser patterns.`
+      );
+    }
+
     runs.push({ meta, parse });
   }
 
@@ -81,6 +94,28 @@ function loadGroundTruth(codebaseId: string): GroundTruth | null {
   const gtPath = path.resolve(process.cwd(), 'ground_truth', `${codebaseId}.json`);
   if (!fs.existsSync(gtPath)) return null;
   return JSON.parse(fs.readFileSync(gtPath, 'utf8'));
+}
+
+/**
+ * Flexible ground truth matching. A parsed finding matches a ground truth entry if:
+ * 1. Exact rootCause match (legacy format: "contract::vuln-type"), OR
+ * 2. Same contract + same vuln type (handles new rootCause format "contract::function")
+ *
+ * This decouples ground truth from display root cause keys.
+ */
+function findingMatchesGT(finding: ParsedFinding, gtFinding: GroundTruthFinding): boolean {
+  // Exact match on rootCause (works for legacy format)
+  if (finding.rootCause === gtFinding.rootCause) return true;
+
+  // Flexible match: same contract + same vuln type
+  const gtParts = gtFinding.rootCause.split('::');
+  if (gtParts.length !== 2) return false;
+  const [gtContract, gtVuln] = gtParts;
+
+  const findingContract = finding.location?.split('.')[0]?.toLowerCase() ?? 'unknown';
+  const findingVuln = finding.vulnType;
+
+  return findingContract === gtContract && findingVuln === gtVuln;
 }
 
 function severityOrConfidence(f: ParsedFinding): string {
@@ -121,12 +156,12 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
         conditionSortIndex(a.meta.conditionId) - conditionSortIndex(b.meta.conditionId)
       );
 
-      push(`## ${codebaseId} — Root Cause (Run ${iteration})`);
+      push(`## ${codebaseId} — Findings (Run ${iteration})`);
       push('');
 
       const colHeaders = iterRuns.map(r => conditionLabel(r.meta.conditionId));
 
-      // Collect all root causes across this iteration's runs
+      // Collect all root causes across this iteration's runs (preserving insertion order)
       const allRootCauses = new Map<string, { title: string; location: string | null }>();
       for (const { parse } of iterRuns) {
         for (const f of parse.findings) {
@@ -136,13 +171,12 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
         }
       }
 
+      // Load ground truth
+      const gt = loadGroundTruth(codebaseId);
+
       // Build all rows first, then pad for alignment
       type Row = { label: string; cells: string[] };
       const rows: Row[] = [];
-
-      // Load ground truth for FP labeling (if available)
-      const gt = loadGroundTruth(codebaseId);
-      const gtRootCauses = new Set(gt?.findings.map(f => f.rootCause) ?? []);
 
       for (const [rootCause] of allRootCauses) {
         const titles: string[] = [];
@@ -152,8 +186,21 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
           titles.push(match.title);
           return severityOrConfidence(match);
         });
+        // Pick shortest title as label (most concise description)
         const title = titles.reduce((a, b) => a.length <= b.length ? a : b, titles[0] || rootCause);
-        const isFP = gt && !gtRootCauses.has(rootCause);
+
+        // FP labeling: a finding is FP if ground truth exists and NO gt entry matches it
+        let isFP = false;
+        if (gt) {
+          // Get any finding with this rootCause to check against GT
+          const anyFinding = iterRuns
+            .flatMap(r => r.parse.findings)
+            .find(f => f.rootCause === rootCause);
+          if (anyFinding) {
+            isFP = !gt.findings.some(g => findingMatchesGT(anyFinding, g));
+          }
+        }
+
         rows.push({ label: isFP ? `(FP) ~${title}~` : title, cells });
       }
 
@@ -170,7 +217,7 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
           label: '**Recall**',
           cells: iterRuns.map(({ parse }) => {
             const found = gt.findings.filter(g =>
-              parse.findings.some(f => f.rootCause === g.rootCause)
+              parse.findings.some(f => findingMatchesGT(f, g))
             );
             return `**${found.length}/${gtCount}**`;
           }),
@@ -178,7 +225,9 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
         rows.push({
           label: '**FPs**',
           cells: iterRuns.map(({ parse }) => {
-            const fpCount = parse.findings.filter(f => !gtRootCauses.has(f.rootCause)).length;
+            const fpCount = parse.findings.filter(f =>
+              !gt.findings.some(g => findingMatchesGT(f, g))
+            ).length;
             return `**${fpCount}**`;
           }),
         });
@@ -192,7 +241,7 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
       // Compute column widths
       const colCount = colHeaders.length;
       const labelWidth = Math.max(
-        'Root Cause'.length,
+        'Finding'.length,
         ...rows.map(r => r.label.length),
       );
       const colWidths: number[] = [];
@@ -206,7 +255,7 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
       const pad = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - s.length));
 
       // Emit aligned table
-      const hdr = `| ${pad('Root Cause', labelWidth)} | ${colHeaders.map((h, i) => pad(h, colWidths[i])).join(' | ')} |`;
+      const hdr = `| ${pad('Finding', labelWidth)} | ${colHeaders.map((h, i) => pad(h, colWidths[i])).join(' | ')} |`;
       const sep = `| ${'-'.repeat(labelWidth)} | ${colWidths.map(w => '-'.repeat(w)).join(' | ')} |`;
       push(hdr);
       push(sep);
@@ -217,6 +266,15 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
       }
 
       push('');
+
+      // Validation: check that unique finding rows == max total across conditions
+      const maxFindings = Math.max(...iterRuns.map(r => r.parse.findings.length), 0);
+      const totalUnique = allRootCauses.size;
+      if (totalUnique < maxFindings) {
+        push(`> **WARNING**: ${maxFindings} findings parsed but only ${totalUnique} unique rows shown. Possible root cause collision — investigate parser.`);
+        push('');
+        log.warn(`${codebaseId} run ${iteration}: ${maxFindings} findings but ${totalUnique} rows — possible collision`);
+      }
     }
   }
 

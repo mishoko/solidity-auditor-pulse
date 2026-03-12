@@ -20,6 +20,10 @@ export function dry(msg: string): void {
   console.log(chalk.gray('[DRY]'), msg);
 }
 
+export function live(msg: string): void {
+  console.log(chalk.cyan('  ↳'), msg);
+}
+
 export function separator(): void {
   console.log(chalk.dim('─'.repeat(60)));
 }

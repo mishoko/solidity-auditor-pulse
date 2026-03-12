@@ -1,6 +1,15 @@
 /**
  * Extracts findings from audit stdout files (skill structured or bare free-form).
  * Normalizes each finding to a root-cause key for cross-run comparison.
+ *
+ * Root cause design:
+ *   - Primary key: full location (contract.function) — maximally specific, never merges
+ *     distinct findings silently.
+ *   - Cross-condition matching: two conditions reporting a bug at the same contract.function
+ *     will naturally match. If they describe it differently, they show as separate rows —
+ *     this is the SAFE failure mode (visible duplication > silent loss).
+ *   - Ground truth matching: separate flexible logic (vuln keyword + contract) in summary.ts,
+ *     decoupled from display root cause.
  */
 
 export interface ParsedFinding {
@@ -16,6 +25,8 @@ export interface ParsedFinding {
   location: string | null;
   /** Normalized root-cause key for cross-run matching */
   rootCause: string;
+  /** Vulnerability classification from title keywords */
+  vulnType: string;
 }
 
 export interface ParseResult {
@@ -39,13 +50,13 @@ const BARE_FINDING_RE = /^#{2,4}\s+\[(CRITICAL|HIGH|MEDIUM|LOW|INFO)\]\s+(.+?)(?
 // Pattern 2: ### H-1: Title, ### M-1: Title, ### L-1: Title (numbered severity prefix)
 const BARE_NUMBERED_RE = /^#{2,4}\s+(H|M|L|I)-\d+:\s+(.+?)(?:\s+—\s+(.+))?$/i;
 
-// --- Root cause normalization ---
+// --- Vulnerability classification (used for ground truth matching, not for root cause key) ---
 const VULN_KEYWORDS: [RegExp, string][] = [
   [/reentranc/i, 'reentrancy'],
   [/access.?control|missing.?(?:access|owner|auth)|unrestricted|unprotected|(?:anyone|any\s+user).*can/i, 'access-control'],
   [/unchecked.{0,3}(?:return|send|call)|silent.*(?:fail|fund|loss)/i, 'unchecked-return'],
   [/tx\.origin|phishing/i, 'tx-origin'],
-  [/overflow|underflow/i, 'overflow'],
+  [/overflow|underflow|truncat/i, 'overflow'],
   [/front.?run|sandwich|mev/i, 'frontrunning'],
   [/dos|denial.?of.?service/i, 'dos'],
   [/flash.?loan/i, 'flash-loan'],
@@ -54,6 +65,13 @@ const VULN_KEYWORDS: [RegExp, string][] = [
   [/selfdestruct/i, 'selfdestruct'],
   [/integer/i, 'integer-issue'],
 ];
+
+export function classifyVuln(title: string): string {
+  for (const [re, label] of VULN_KEYWORDS) {
+    if (re.test(title)) return label;
+  }
+  return 'other';
+}
 
 function extractLocation(title: string, explicitLoc: string | null): string | null {
   // Try to extract Contract.function from title first (most precise)
@@ -84,24 +102,42 @@ function extractLocation(title: string, explicitLoc: string | null): string | nu
   return null;
 }
 
-function classifyVuln(title: string): string {
-  for (const [re, label] of VULN_KEYWORDS) {
-    if (re.test(title)) return label;
-  }
-  return 'other';
+/**
+ * Generates a stable slug from the title for use when location is unavailable.
+ * Takes first few meaningful words, lowercased, hyphen-joined.
+ */
+function titleSlug(title: string): string {
+  const words = title
+    .replace(/[^a-zA-Z0-9\s]/g, '')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(w => w.length > 2)
+    .slice(0, 4);
+  return words.join('-') || 'unknown';
 }
 
+/**
+ * Root cause key: maximally specific, never silently merges distinct findings.
+ *
+ * Format: "contract::function::vulntype"
+ *   - Two different bugs at the same function (e.g. unchecked-return + access-control
+ *     on withdrawUnsafe) get different keys.
+ *   - Same bug reported by different conditions (same contract, function, vuln type)
+ *     correctly merges into one row.
+ *   - When function unknown: "contract::vulntype" or "contract::title-slug"
+ *   - When location unknown: "unknown::title-slug"
+ */
 function makeRootCause(title: string, location: string | null): string {
   const vuln = classifyVuln(title);
-  // Use contract name only (not function) for root cause matching.
-  // Function names differ between formats (e.g. bare says "send()" for unchecked-return
-  // in withdrawUnsafe, while skill says "withdrawUnsafe"). Contract + vuln type is stable.
-  let contract = 'unknown';
   if (location) {
     const parts = location.split('.');
-    contract = parts[0].toLowerCase();
+    const contract = parts[0].toLowerCase();
+    const func = parts.length > 1 ? parts[1].toLowerCase() : null;
+    if (func) return `${contract}::${func}::${vuln}`;
+    if (vuln !== 'other') return `${contract}::${vuln}`;
+    return `${contract}::${titleSlug(title)}`;
   }
-  return `${contract}::${vuln}`;
+  return `unknown::${titleSlug(title)}`;
 }
 
 export function parseOutput(text: string): ParseResult {
@@ -157,6 +193,7 @@ function parseSkillFormat(lines: string[]): ParseResult {
         severity: null,
         location,
         rootCause: makeRootCause(title, location),
+        vulnType: classifyVuln(title),
       });
     }
 
@@ -220,6 +257,7 @@ function parseBareFormat(lines: string[]): ParseResult {
         severity,
         location,
         rootCause: makeRootCause(title, location),
+        vulnType: classifyVuln(title),
       });
     }
 

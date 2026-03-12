@@ -90,14 +90,96 @@ export async function prepareWorkspace(
     const skillDest = path.join(commandsDir, 'solidity-auditor');
     await execSimple(`cp -R "${skillSrcPath}" "${skillDest}"`);
 
+    // Fix /tmp/ collision: rewrite hardcoded /tmp/audit- paths to condition-scoped paths.
+    // V1 and V2 skills both create /tmp/audit-agent-{N}-bundle.md. When running in parallel
+    // they'd clobber each other. Prefix with conditionId to isolate.
+    const skillMd = path.join(skillDest, 'SKILL.md');
+    if (fs.existsSync(skillMd)) {
+      let content = fs.readFileSync(skillMd, 'utf8');
+      const tmpPrefix = `/tmp/audit-${conditionId}-`;
+      content = content.replace(/\/tmp\/audit-/g, tmpPrefix);
+
+      // Inject canary control string for isolation verification.
+      // If this string appears in a bare run's output → contamination detected.
+      const canary = `BENCHMARK_CANARY_${conditionId.toUpperCase()}_${Date.now().toString(36)}`;
+      content += `\n\n<!-- BENCHMARK_CONTROL: ${canary} -->\n`;
+
+      fs.writeFileSync(skillMd, content);
+      log.info(`Skill patched: /tmp/ → ${tmpPrefix}*, canary: ${canary}`);
+    }
+
     verifySkillVersion(wsDir, skillVersion);
     log.info(`Workspace: ${codebaseId}/${conditionId} (copied + skill ${skillVersion} installed)`);
   } else {
     log.info(`Workspace: ${codebaseId}/${conditionId} (copied, no skill)`);
   }
 
+  // Always create CLAUDE.md in workspace root.
+  // 1. Stops Claude from walking up and finding the project's own CLAUDE.md
+  //    (which contains benchmark internals — would contaminate all runs).
+  // 2. Delivers scope info identically to all conditions (skill and bare).
+  writeWorkspaceClaudeMd(wsDir, codebasePath);
+
   preparedWorkspaces.set(key, wsDir);
   return wsDir;
+}
+
+/**
+ * Creates a CLAUDE.md in the workspace root. Two purposes:
+ * 1. Blocks parent-directory walk-up (prevents project CLAUDE.md contamination)
+ * 2. Delivers scope info consistently to all conditions
+ *
+ * If the dataset has scope.txt → includes the in-scope file list.
+ * If no scope file → creates a minimal CLAUDE.md (still blocks walk-up).
+ * Never fails if scope files are missing.
+ */
+function writeWorkspaceClaudeMd(wsDir: string, codebasePath: string): void {
+  const datasetDir = path.resolve(ROOT, codebasePath);
+  const lines: string[] = [];
+
+  lines.push('# Benchmark Workspace');
+  lines.push('');
+  lines.push('This is an isolated benchmark workspace. Do not modify files outside this directory.');
+  lines.push('');
+
+  // Check for scope.txt in the original dataset (not workspace — it's already copied)
+  const scopeFile = path.join(datasetDir, 'scope.txt');
+  const outOfScopeFile = path.join(datasetDir, 'out_of_scope.txt');
+
+  if (fs.existsSync(scopeFile)) {
+    const scopeContent = fs.readFileSync(scopeFile, 'utf8').trim();
+    const scopeFiles = scopeContent.split('\n').filter(l => l.trim()).length;
+    lines.push('## Audit Scope');
+    lines.push('');
+    lines.push('Focus your audit on the following in-scope files. Other files are present for context (imports, interfaces) but are NOT in scope for findings.');
+    lines.push('');
+    lines.push('```');
+    lines.push(scopeContent);
+    lines.push('```');
+    lines.push('');
+    log.info(`Scope: ${scopeFiles} files in scope (from scope.txt)`);
+  }
+
+  if (fs.existsSync(outOfScopeFile)) {
+    const outContent = fs.readFileSync(outOfScopeFile, 'utf8').trim();
+    if (outContent) {
+      lines.push('## Out of Scope');
+      lines.push('');
+      lines.push('The following are explicitly out of scope:');
+      lines.push('');
+      lines.push('```');
+      lines.push(outContent);
+      lines.push('```');
+      lines.push('');
+    }
+  }
+
+  if (!fs.existsSync(scopeFile) && !fs.existsSync(outOfScopeFile)) {
+    log.info('No scope file found — CLAUDE.md created without scope (blocks parent walk-up only)');
+  }
+
+  const claudeMdPath = path.join(wsDir, 'CLAUDE.md');
+  fs.writeFileSync(claudeMdPath, lines.join('\n'));
 }
 
 /**
