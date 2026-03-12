@@ -186,8 +186,14 @@ export async function runBench(config: BenchConfig, opts: CliOptions): Promise<R
 
   // Post-run verification (skip for dry runs)
   if (!opts.dryRun) {
+    // Build codebase path lookup for scope checking
+    const codebasePathMap = new Map<string, string>();
+    for (const cb of codebases) {
+      codebasePathMap.set(cb.id, cb.path);
+    }
+
     const verifyResults: VerifyResult[] = results.map(meta =>
-      verifyRun(meta, path.join(ROOT, 'results'))
+      verifyRun(meta, path.join(ROOT, 'results'), codebasePathMap.get(meta.codebaseId))
     );
     printVerifyResults(verifyResults);
   }
