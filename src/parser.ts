@@ -47,8 +47,12 @@ const SKILL_TABLE_ROW_RE = /^\|\s*(\d+)\s*\|\s*\[(\d+)\]\s*\|\s*(.+?)\s*\|/;
 // --- Bare format parsing ---
 // Pattern 1: ##+ [SEVERITY] Title — Location (bare Claude uses variable header levels)
 const BARE_FINDING_RE = /^#{2,4}\s+\[(CRITICAL|HIGH|MEDIUM|LOW|INFO)\]\s+(.+?)(?:\s+—\s+(.+))?$/i;
-// Pattern 2: ### H-1: Title, ### M-1: Title, ### L-1: Title (numbered severity prefix)
+// Pattern 2: ### H-1: Title, ### M-1: Title, ### L-1: Title (numbered severity prefix, with colon)
 const BARE_NUMBERED_RE = /^#{2,4}\s+(H|M|L|I)-\d+:\s+(.+?)(?:\s+—\s+(.+))?$/i;
+// Pattern 2b: ### [H-1] Title (numbered severity prefix, bracketed)
+const BARE_BRACKETED_NUM_RE = /^#{2,4}\s+\[(H|M|L|I)-\d+\]\s+(.+?)(?:\s+—\s+(.+))?$/i;
+// Pattern 3: ### N. Title — **SEVERITY** (numbered with trailing severity)
+const BARE_TRAILING_SEV_RE = /^#{2,4}\s+\d+\.\s+(.+?)\s+—\s+\*\*(CRITICAL|HIGH|MEDIUM|LOW|INFO)\*\*$/i;
 
 // --- Vulnerability classification (used for ground truth matching, not for root cause key) ---
 const VULN_KEYWORDS: [RegExp, string][] = [
@@ -146,7 +150,9 @@ export function parseOutput(text: string): ParseResult {
   // Detect format
   const hasSkillHeader = text.includes('🔐 Security Review') || text.includes('## Scope');
   const hasBareHeader = /^#{2,4}\s+\[(CRITICAL|HIGH|MEDIUM|LOW)/im.test(text)
-    || /^#{2,4}\s+(H|M|L|I)-\d+:/im.test(text);
+    || /^#{2,4}\s+(H|M|L|I)-\d+:/im.test(text)
+    || /^#{2,4}\s+\[(H|M|L|I)-\d+\]/im.test(text)
+    || /^#{2,4}\s+\d+\.\s+.+?\s+—\s+\*\*(CRITICAL|HIGH|MEDIUM|LOW|INFO)\*\*/im.test(text);
 
   if (hasSkillHeader) return parseSkillFormat(lines);
   if (hasBareHeader) return parseBareFormat(lines);
@@ -228,18 +234,34 @@ function parseBareFormat(lines: string[]): ParseResult {
       continue;
     }
 
-    // Match either [SEVERITY] or H-1:/M-1:/L-1: format
+    // Match [SEVERITY], H-1:/M-1:/L-1:, [H-1], or "N. Title — **SEVERITY**" formats
     const m = BARE_FINDING_RE.exec(line);
     const m2 = m ? null : BARE_NUMBERED_RE.exec(line);
-    const match = m || m2;
+    const m2b = (m || m2) ? null : BARE_BRACKETED_NUM_RE.exec(line);
+    const m3 = (m || m2 || m2b) ? null : BARE_TRAILING_SEV_RE.exec(line);
+    const match = m || m2 || m2b || m3;
     if (match) {
       index++;
       const sevMap: Record<string, string> = { H: 'HIGH', M: 'MEDIUM', L: 'LOW', I: 'INFO' };
-      const severity = m
-        ? m[1].toUpperCase()
-        : sevMap[m2![1].toUpperCase()] || m2![1].toUpperCase();
-      const title = match[2].trim();
-      const locStr = match[3] || null;
+      let severity: string;
+      let title: string;
+      let locStr: string | null;
+      if (m3) {
+        // Pattern 3: title is group 1, severity is group 2
+        title = m3[1].trim();
+        severity = m3[2].toUpperCase();
+        locStr = null;
+      } else if (m) {
+        severity = m[1].toUpperCase();
+        title = m[2].trim();
+        locStr = m[3] || null;
+      } else {
+        // m2 or m2b — both have same group structure (severity letter, title, optional loc)
+        const nm = (m2 || m2b)!;
+        severity = sevMap[nm[1].toUpperCase()] || nm[1].toUpperCase();
+        title = nm[2].trim();
+        locStr = nm[3] || null;
+      }
 
       // Try to extract location from title, fall back to current section contract
       let location = extractLocation(title, locStr);

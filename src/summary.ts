@@ -1,14 +1,9 @@
 /**
- * Reads all results/*.meta.json + *.stdout.txt, parses findings,
- * and generates a comparison markdown table.
+ * Reads results/*.meta.json + *.stdout.txt, parses findings,
+ * and generates a comparison markdown report with graphical elements.
  *
- * Column order: V2, V1 default, V1 deep, CC bare
- * Rows grouped by iteration (Run 1, Run 2, …)
- * If ground_truth/<codebaseId>.json exists, adds Recall and FP rows.
- *
- * INVARIANT: every parsed finding appears as its own row. No silent merging.
- * Cross-condition matching uses rootCause key (contract::function).
- * Ground truth matching uses flexible logic (vuln type + contract).
+ * Uses ONLY the latest run per (codebase, condition) — ignores older test runs.
+ * Matches findings against ground truth using location-based fuzzy matching.
  */
 
 import * as fs from 'node:fs';
@@ -22,12 +17,11 @@ interface RunData {
   parse: ParseResult;
 }
 
-/** Display names and sort order for conditions */
 const CONDITION_ORDER: [string, string][] = [
   ['skill_v2', 'V2'],
-  ['skill_v1_default', 'V1 Default'],
+  ['skill_v1_default', 'V1'],
   ['skill_v1_deep', 'V1 Deep'],
-  ['bare_audit', 'CC Bare'],
+  ['bare_audit', 'Bare CC'],
 ];
 
 function conditionLabel(id: string): string {
@@ -39,30 +33,32 @@ function conditionSortIndex(id: string): number {
   return idx >= 0 ? idx : 999;
 }
 
-function loadRuns(resultsDir: string): RunData[] {
+function loadLatestRuns(resultsDir: string): RunData[] {
   const runs: RunData[] = [];
   const metaFiles = fs.readdirSync(resultsDir).filter(f => f.endsWith('.meta.json'));
 
+  // Keep only the latest run per (codebase, condition)
+  const latest = new Map<string, { file: string; ts: string }>();
   for (const file of metaFiles) {
     const meta: RunMeta = JSON.parse(fs.readFileSync(path.join(resultsDir, file), 'utf8'));
-    if (meta.exitCode !== 0) continue; // skip failed runs
-    const stdoutFile = path.join(resultsDir, `${meta.runId}.stdout.txt`);
-    if (!fs.existsSync(stdoutFile)) {
-      log.warn(`Orphaned meta (no stdout): ${file} — delete or re-run`);
-      continue;
+    const key = `${meta.codebaseId}::${meta.conditionId}`;
+    const existing = latest.get(key);
+    if (!existing || meta.timestampUtc > existing.ts) {
+      latest.set(key, { file, ts: meta.timestampUtc });
     }
+  }
+
+  for (const { file } of latest.values()) {
+    const meta: RunMeta = JSON.parse(fs.readFileSync(path.join(resultsDir, file), 'utf8'));
+
+    // Accept exitCode 0 or 143 (grace-killed after result received)
+    if (meta.exitCode !== 0 && meta.exitCode !== 143) continue;
+
+    const stdoutFile = path.join(resultsDir, `${meta.runId}.stdout.txt`);
+    if (!fs.existsSync(stdoutFile)) continue;
 
     const text = fs.readFileSync(stdoutFile, 'utf8');
     const parse = parseOutput(text);
-
-    // Validation: warn if parsed count doesn't match reported count
-    if (parse.reportedCount !== null && parse.findings.length !== parse.reportedCount) {
-      log.warn(
-        `Parse mismatch in ${meta.runId}: parsed ${parse.findings.length} findings ` +
-        `but report lists ${parse.reportedCount}. Check parser patterns.`
-      );
-    }
-
     runs.push({ meta, parse });
   }
 
@@ -71,23 +67,28 @@ function loadRuns(resultsDir: string): RunData[] {
 
 function formatDuration(ms: number): string {
   if (ms === 0) return '-';
-  const totalSec = Math.round(ms / 1000);
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  if (min === 0) return `${sec}s`;
-  return `${totalSec}s (${min}m ${sec}s)`;
+  const sec = Math.round(ms / 1000);
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}m${s}s` : `${sec}s`;
 }
 
-interface GroundTruthFinding {
+// ─── Ground Truth ───
+
+interface GTFinding {
   id: string;
+  severity?: string;
+  title: string;
   rootCause: string;
   location: string;
+  line?: number;
   description: string;
+  judgeVerdict?: string;
 }
 
 interface GroundTruth {
   codebaseId: string;
-  findings: GroundTruthFinding[];
+  findings: GTFinding[];
 }
 
 function loadGroundTruth(codebaseId: string): GroundTruth | null {
@@ -97,35 +98,53 @@ function loadGroundTruth(codebaseId: string): GroundTruth | null {
 }
 
 /**
- * Flexible ground truth matching. A parsed finding matches a ground truth entry if:
- * 1. Exact rootCause match (legacy format: "contract::vuln-type"), OR
- * 2. Same contract + same vuln type (handles new rootCause format "contract::function")
- *
- * This decouples ground truth from display root cause keys.
+ * Fuzzy match: does the parsed finding match this GT entry?
+ * Uses location (contract.function) and title keyword overlap.
  */
-function findingMatchesGT(finding: ParsedFinding, gtFinding: GroundTruthFinding): boolean {
-  // Exact match on rootCause (works for legacy format)
-  if (finding.rootCause === gtFinding.rootCause) return true;
+function matchesGT(finding: ParsedFinding, gt: GTFinding): boolean {
+  const fLoc = (finding.location ?? '').toLowerCase();
+  const gtLoc = gt.location.toLowerCase();
 
-  // Flexible match: same contract + same vuln type
-  const gtParts = gtFinding.rootCause.split('::');
-  if (gtParts.length !== 2) return false;
-  const [gtContract, gtVuln] = gtParts;
+  // Extract contract name from GT location (e.g. "DistributionCreator._createCampaign" → "distributioncreator")
+  const gtContract = gtLoc.split('.')[0].replace(/\s*\(.*$/, '');
+  const gtFunc = gtLoc.includes('.') ? gtLoc.split('.')[1].split(/\s/)[0] : null;
 
-  const findingContract = finding.location?.split('.')[0]?.toLowerCase() ?? 'unknown';
-  const findingVuln = finding.vulnType;
+  // Contract match (finding location contains GT contract)
+  const contractMatch = fLoc.includes(gtContract) || gtContract.includes(fLoc.split('.')[0]);
 
-  return findingContract === gtContract && findingVuln === gtVuln;
+  // Function match
+  const funcMatch = gtFunc && fLoc.includes(gtFunc);
+
+  // Title keyword overlap (at least 2 significant words match)
+  const gtWords = new Set(
+    ((gt.title ?? '') + ' ' + gt.description)
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(w => w.length > 3)
+  );
+  const fWords = finding.title.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 3);
+  const overlap = fWords.filter(w => gtWords.has(w)).length;
+
+  // Match if: (same contract AND same function) OR (same contract AND ≥3 keyword overlap)
+  if (contractMatch && funcMatch) return true;
+  if (contractMatch && overlap >= 3) return true;
+  if (overlap >= 5) return true; // strong title match even without contract
+
+  return false;
 }
 
-function severityOrConfidence(f: ParsedFinding): string {
-  if (f.confidence !== null) return `[${f.confidence}]`;
-  if (f.severity !== null) return f.severity;
-  return '?';
+// ─── ASCII Bar Chart ───
+
+function bar(value: number, max: number, width: number = 20): string {
+  if (max === 0) return '░'.repeat(width);
+  const filled = Math.round((value / max) * width);
+  return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
+
+// ─── Report Generation ───
 
 export function generateSummary(resultsDir: string, outputPath: string): void {
-  const allRuns = loadRuns(resultsDir);
+  const allRuns = loadLatestRuns(resultsDir);
   if (allRuns.length === 0) {
     log.warn('No results found');
     return;
@@ -136,6 +155,8 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
 
   push('# Benchmark Results');
   push('');
+  push(`> Generated: ${new Date().toISOString().split('T')[0]}`);
+  push('');
 
   // Group by codebase
   const byCodebase = new Map<string, RunData[]>();
@@ -145,145 +166,123 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
     byCodebase.set(run.meta.codebaseId, arr);
   }
 
-  for (const [codebaseId, codebaseRuns] of byCodebase) {
-    const iterations = [...new Set(codebaseRuns.map(r => r.meta.iteration))].sort();
+  // Overview table
+  push('## Overview');
+  push('');
+  push('| Codebase | Condition | Findings | Duration | Cost |');
+  push('|----------|-----------|----------|----------|------|');
+  for (const [codebaseId, runs] of byCodebase) {
+    runs.sort((a, b) => conditionSortIndex(a.meta.conditionId) - conditionSortIndex(b.meta.conditionId));
+    for (const run of runs) {
+      const label = conditionLabel(run.meta.conditionId);
+      const dur = formatDuration(run.meta.durationMs);
+      // Try to extract cost from events
+      const eventsPath = path.join(resultsDir, `${run.meta.runId}.events.jsonl`);
+      let cost = '-';
+      if (fs.existsSync(eventsPath)) {
+        const eventsText = fs.readFileSync(eventsPath, 'utf8');
+        const costMatch = eventsText.match(/"total_cost_usd":\s*([\d.]+)/);
+        if (costMatch) cost = `$${parseFloat(costMatch[1]).toFixed(2)}`;
+      }
+      push(`| ${codebaseId} | ${label} | ${run.parse.findings.length} | ${dur} | ${cost} |`);
+    }
+  }
+  push('');
 
-    for (const iteration of iterations) {
-      const iterRuns = codebaseRuns.filter(r => r.meta.iteration === iteration);
+  // Per-codebase detailed sections
+  for (const [codebaseId, runs] of byCodebase) {
+    runs.sort((a, b) => conditionSortIndex(a.meta.conditionId) - conditionSortIndex(b.meta.conditionId));
 
-      // Sort runs by condition order
-      iterRuns.sort((a, b) =>
-        conditionSortIndex(a.meta.conditionId) - conditionSortIndex(b.meta.conditionId)
-      );
+    const gt = loadGroundTruth(codebaseId);
+    const gtCount = gt?.findings.length ?? 0;
 
-      push(`## ${codebaseId} — Findings (Run ${iteration})`);
+    push(`## ${codebaseId}`);
+    push('');
+
+    // Recall bar chart
+    if (gt) {
+      push('### Recall');
+      push('');
+      push('```');
+      for (const run of runs) {
+        const label = conditionLabel(run.meta.conditionId).padEnd(8);
+        const matched = gt.findings.filter(g => run.parse.findings.some(f => matchesGT(f, g)));
+        const matchedIds = matched.map(g => g.id);
+        const recallPct = gtCount > 0 ? Math.round((matched.length / gtCount) * 100) : 0;
+        push(`${label} ${bar(matched.length, gtCount)} ${matched.length}/${gtCount} (${recallPct}%) ${matchedIds.join(', ')}`);
+      }
+      push('```');
       push('');
 
-      const colHeaders = iterRuns.map(r => conditionLabel(r.meta.conditionId));
-
-      // Collect all root causes across this iteration's runs (preserving insertion order)
-      const allRootCauses = new Map<string, { title: string; location: string | null }>();
-      for (const { parse } of iterRuns) {
-        for (const f of parse.findings) {
-          if (!allRootCauses.has(f.rootCause)) {
-            allRootCauses.set(f.rootCause, { title: f.title, location: f.location });
+      // Missed findings
+      const allMatched = new Set<string>();
+      for (const run of runs) {
+        for (const g of gt.findings) {
+          if (run.parse.findings.some(f => matchesGT(f, g))) {
+            allMatched.add(g.id);
           }
         }
       }
-
-      // Load ground truth
-      const gt = loadGroundTruth(codebaseId);
-
-      // Build all rows first, then pad for alignment
-      type Row = { label: string; cells: string[] };
-      const rows: Row[] = [];
-
-      for (const [rootCause] of allRootCauses) {
-        const titles: string[] = [];
-        const cells = iterRuns.map(({ parse }) => {
-          const match = parse.findings.find(f => f.rootCause === rootCause);
-          if (!match) return '-';
-          titles.push(match.title);
-          return severityOrConfidence(match);
-        });
-        // Pick shortest title as label (most concise description)
-        const title = titles.reduce((a, b) => a.length <= b.length ? a : b, titles[0] || rootCause);
-
-        // FP labeling: a finding is FP if ground truth exists and NO gt entry matches it
-        let isFP = false;
-        if (gt) {
-          // Get any finding with this rootCause to check against GT
-          const anyFinding = iterRuns
-            .flatMap(r => r.parse.findings)
-            .find(f => f.rootCause === rootCause);
-          if (anyFinding) {
-            isFP = !gt.findings.some(g => findingMatchesGT(anyFinding, g));
-          }
-        }
-
-        rows.push({ label: isFP ? `(FP) ~${title}~` : title, cells });
-      }
-
-      // Footer rows
-      rows.push({
-        label: '**Total**',
-        cells: iterRuns.map(r => `**${r.parse.findings.length}**`),
-      });
-
-      // Recall and FP count rows — only if ground truth exists
-      if (gt) {
-        const gtCount = gt.findings.length;
-        rows.push({
-          label: '**Recall**',
-          cells: iterRuns.map(({ parse }) => {
-            const found = gt.findings.filter(g =>
-              parse.findings.some(f => findingMatchesGT(f, g))
-            );
-            return `**${found.length}/${gtCount}**`;
-          }),
-        });
-        rows.push({
-          label: '**FPs**',
-          cells: iterRuns.map(({ parse }) => {
-            const fpCount = parse.findings.filter(f =>
-              !gt.findings.some(g => findingMatchesGT(f, g))
-            ).length;
-            return `**${fpCount}**`;
-          }),
-        });
-      }
-
-      rows.push({
-        label: '**Duration**',
-        cells: iterRuns.map(r => formatDuration(r.meta.durationMs)),
-      });
-
-      // Compute column widths
-      const colCount = colHeaders.length;
-      const labelWidth = Math.max(
-        'Finding'.length,
-        ...rows.map(r => r.label.length),
-      );
-      const colWidths: number[] = [];
-      for (let c = 0; c < colCount; c++) {
-        colWidths.push(Math.max(
-          colHeaders[c].length,
-          ...rows.map(r => r.cells[c].length),
-        ));
-      }
-
-      const pad = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - s.length));
-
-      // Emit aligned table
-      const hdr = `| ${pad('Finding', labelWidth)} | ${colHeaders.map((h, i) => pad(h, colWidths[i])).join(' | ')} |`;
-      const sep = `| ${'-'.repeat(labelWidth)} | ${colWidths.map(w => '-'.repeat(w)).join(' | ')} |`;
-      push(hdr);
-      push(sep);
-
-      for (const row of rows) {
-        const line = `| ${pad(row.label, labelWidth)} | ${row.cells.map((c, i) => pad(c, colWidths[i])).join(' | ')} |`;
-        push(line);
-      }
-
-      push('');
-
-      // Validation: check that unique finding rows == max total across conditions
-      const maxFindings = Math.max(...iterRuns.map(r => r.parse.findings.length), 0);
-      const totalUnique = allRootCauses.size;
-      if (totalUnique < maxFindings) {
-        push(`> **WARNING**: ${maxFindings} findings parsed but only ${totalUnique} unique rows shown. Possible root cause collision — investigate parser.`);
+      const missed = gt.findings.filter(g => !allMatched.has(g.id));
+      if (missed.length > 0) {
+        push(`**Missed by all**: ${missed.map(g => `${g.id} (${(g.title ?? g.description).slice(0, 50)})`).join(', ')}`);
         push('');
-        log.warn(`${codebaseId} run ${iteration}: ${maxFindings} findings but ${totalUnique} rows — possible collision`);
       }
+
+      // FP chart
+      push('### False Positives');
+      push('');
+      push('```');
+      const maxFindings = Math.max(...runs.map(r => r.parse.findings.length), 1);
+      for (const run of runs) {
+        const label = conditionLabel(run.meta.conditionId).padEnd(8);
+        const fps = run.parse.findings.filter(f => !gt.findings.some(g => matchesGT(f, g)));
+        push(`${label} ${bar(fps.length, maxFindings)} ${fps.length} FP(s)${fps.length > 0 ? ': ' + fps.map(f => f.title.slice(0, 40)).join('; ') : ''}`);
+      }
+      push('```');
+      push('');
+    }
+
+    // Duration chart
+    push('### Duration');
+    push('');
+    push('```');
+    const maxDur = Math.max(...runs.map(r => r.meta.durationMs));
+    for (const run of runs) {
+      const label = conditionLabel(run.meta.conditionId).padEnd(8);
+      push(`${label} ${bar(run.meta.durationMs, maxDur)} ${formatDuration(run.meta.durationMs)}`);
+    }
+    push('```');
+    push('');
+
+    // Findings detail table
+    if (gt) {
+      push('### Findings Matrix');
+      push('');
+      const colHeaders = runs.map(r => conditionLabel(r.meta.conditionId));
+      push(`| GT | Finding | ${colHeaders.join(' | ')} |`);
+      push(`| -- | ------- | ${colHeaders.map(() => '---').join(' | ')} |`);
+
+      for (const g of gt.findings) {
+        const cells = runs.map(run => {
+          const match = run.parse.findings.find(f => matchesGT(f, g));
+          if (!match) return '-';
+          if (match.confidence !== null) return `[${match.confidence}]`;
+          if (match.severity) return match.severity.slice(0, 4).toUpperCase();
+          return '✓';
+        });
+        const sev = (g.severity ?? '?')[0].toUpperCase();
+        const rawTitle = g.title ?? g.description;
+        const title = rawTitle.length > 55 ? rawTitle.slice(0, 52) + '...' : rawTitle;
+        push(`| ${sev}-${g.id.replace(/^[HML]-/, '')} | ${title} | ${cells.join(' | ')} |`);
+      }
+      push('');
     }
   }
 
-  push(`*Generated: ${new Date().toISOString()}*`);
-  push('');
-
   const content = lines.join('\n');
   fs.writeFileSync(outputPath, content);
-  log.success(`Summary written to ${outputPath}`);
+  log.success(`Summary written to ${outputPath} (${lines.length} lines)`);
   console.log('\n' + content);
 }
 
