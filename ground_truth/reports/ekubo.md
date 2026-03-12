@@ -1,3 +1,5 @@
+https://code4rena.com/audits/2025-11-ekubo
+
 Ekubo Findings & Analysis Report
 PUBLISHED Jan 12, 2026
 Overview

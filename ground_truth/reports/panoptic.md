@@ -1,3 +1,5 @@
+https://code4rena.com/audits/2025-12-panoptic-next-core
+
 Panoptic: Next Core Findings & Analysis Report
 PUBLISHED Mar 09, 2026
 Overview

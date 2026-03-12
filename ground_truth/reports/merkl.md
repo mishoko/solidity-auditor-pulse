@@ -1,3 +1,5 @@
+https://code4rena.com/audits/2025-11-merkl
+
 Merkl Findings & Analysis Report
 PUBLISHED Jan 27, 2026
 Overview

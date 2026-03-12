@@ -1,3 +1,5 @@
+https://code4rena.com/audits/2025-11-brix-money
+
 Brix Money Findings & Analysis Report
 PUBLISHED Feb 10, 2026
 Overview

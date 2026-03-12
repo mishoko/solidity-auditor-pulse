@@ -1,3 +1,5 @@
+https://code4rena.com/audits/2025-11-megapot
+
 Megapot Findings & Analysis Report
 PUBLISHED Jan 05, 2026
 Overview
