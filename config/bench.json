@@ -18,13 +18,21 @@
     {
       "id": "canary",
       "path": "datasets/canary"
+    },
+    {
+      "id": "merkl",
+      "path": "datasets/merkl"
+    },
+    {
+      "id": "brix",
+      "path": "datasets/brix"
     }
   ],
   "conditions": [
     {
       "id": "bare_audit",
       "type": "bare",
-      "prompt": "Do a security audit on the code"
+      "prompt": "Perform a comprehensive security audit of the codebase. Find all vulnerabilities through deep analysis"
     },
     {
       "id": "skill_v1_default",

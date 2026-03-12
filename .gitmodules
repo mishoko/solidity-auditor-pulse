@@ -7,3 +7,9 @@
 [submodule "datasets/megapot"]
 	path = datasets/megapot
 	url = https://github.com/code-423n4/2025-11-megapot
+[submodule "datasets/merkl"]
+	path = datasets/merkl
+	url = https://github.com/code-423n4/2025-11-merkl
+[submodule "datasets/brix"]
+	path = datasets/brix
+	url = https://github.com/code-423n4/2025-11-brix-money
