@@ -11,15 +11,16 @@ Available codebases: `canary`, `nft-dealers`, `merkl`, `brix`, `ekubo`, `megapot
 
 ```
 CODEBASES=<SET_HERE>
+RUNS=1
 
-Run a parallel benchmark on the above codebase(s) with all 3 conditions (bare_audit, skill_v1_default, skill_v2), 1 run each, 10-minute timeout.
+Run a parallel benchmark on the above codebase(s) with all 3 conditions (bare_audit, skill_v1_default, skill_v2), $RUNS run each, 10-minute timeout.
 
 Before running:
 1. Check if each dataset has scope.txt and out_of_scope.txt — show me the in-scope file count per codebase
 2. Build the project
 
 Run:
-3. Execute: npm run bench -- --codebases $CODEBASES --conditions bare_audit,skill_v1_default,skill_v2 --runs 1 --parallel
+3. Execute: npm run bench -- --codebases $CODEBASES --conditions bare_audit,skill_v1_default,skill_v2 --runs $RUNS --parallel
 
 After the run completes:
 4. Verify all conditions passed verification checks
