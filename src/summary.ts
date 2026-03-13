@@ -106,11 +106,11 @@ function matchesGT(finding: ParsedFinding, gt: GTFinding): boolean {
   const gtLoc = gt.location.toLowerCase();
 
   // Extract contract name from GT location (e.g. "DistributionCreator._createCampaign" → "distributioncreator")
-  const gtContract = gtLoc.split('.')[0].replace(/\s*\(.*$/, '');
-  const gtFunc = gtLoc.includes('.') ? gtLoc.split('.')[1].split(/\s/)[0] : null;
+  const gtContract = (gtLoc.split('.')[0] ?? '').replace(/\s*\(.*$/, '');
+  const gtFunc = gtLoc.includes('.') ? (gtLoc.split('.')[1] ?? '').split(/\s/)[0] ?? '' : null;
 
   // Contract match (finding location contains GT contract)
-  const contractMatch = fLoc.includes(gtContract) || gtContract.includes(fLoc.split('.')[0]);
+  const contractMatch = fLoc.includes(gtContract) || gtContract.includes(fLoc.split('.')[0] ?? '');
 
   // Function match
   const funcMatch = gtFunc && fLoc.includes(gtFunc);
@@ -158,12 +158,15 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
   push(`> Generated: ${new Date().toISOString().split('T')[0]}`);
   push('');
 
-  // Group by codebase
+  // Group by codebase, sorted by condition order
   const byCodebase = new Map<string, RunData[]>();
   for (const run of allRuns) {
     const arr = byCodebase.get(run.meta.codebaseId) ?? [];
     arr.push(run);
     byCodebase.set(run.meta.codebaseId, arr);
+  }
+  for (const runs of byCodebase.values()) {
+    runs.sort((a, b) => conditionSortIndex(a.meta.conditionId) - conditionSortIndex(b.meta.conditionId));
   }
 
   // Overview table
@@ -172,7 +175,6 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
   push('| Codebase | Condition | Findings | Duration | Cost |');
   push('|----------|-----------|----------|----------|------|');
   for (const [codebaseId, runs] of byCodebase) {
-    runs.sort((a, b) => conditionSortIndex(a.meta.conditionId) - conditionSortIndex(b.meta.conditionId));
     for (const run of runs) {
       const label = conditionLabel(run.meta.conditionId);
       const dur = formatDuration(run.meta.durationMs);
@@ -182,7 +184,7 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
       if (fs.existsSync(eventsPath)) {
         const eventsText = fs.readFileSync(eventsPath, 'utf8');
         const costMatch = eventsText.match(/"total_cost_usd":\s*([\d.]+)/);
-        if (costMatch) cost = `$${parseFloat(costMatch[1]).toFixed(2)}`;
+        if (costMatch?.[1]) cost = `$${parseFloat(costMatch[1]).toFixed(2)}`;
       }
       push(`| ${codebaseId} | ${label} | ${run.parse.findings.length} | ${dur} | ${cost} |`);
     }
@@ -191,8 +193,6 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
 
   // Per-codebase detailed sections
   for (const [codebaseId, runs] of byCodebase) {
-    runs.sort((a, b) => conditionSortIndex(a.meta.conditionId) - conditionSortIndex(b.meta.conditionId));
-
     const gt = loadGroundTruth(codebaseId);
     const gtCount = gt?.findings.length ?? 0;
 
@@ -271,7 +271,7 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
           if (match.severity) return match.severity.slice(0, 4).toUpperCase();
           return '✓';
         });
-        const sev = (g.severity ?? '?')[0].toUpperCase();
+        const sev = ((g.severity ?? '?')[0] ?? '?').toUpperCase();
         const rawTitle = g.title ?? g.description;
         const title = rawTitle.length > 55 ? rawTitle.slice(0, 52) + '...' : rawTitle;
         push(`| ${sev}-${g.id.replace(/^[HML]-/, '')} | ${title} | ${cells.join(' | ')} |`);

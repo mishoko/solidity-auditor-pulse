@@ -81,13 +81,13 @@ function extractLocation(title: string, explicitLoc: string | null): string | nu
   // Try to extract Contract.function from title first (most precise)
   // Matches "Vault.withdraw()" or "TokenSale.setPrice"
   const dotMatch = title.match(/\b([A-Z]\w+)\.(\w+)/);
-  if (dotMatch) return `${dotMatch[1]}.${dotMatch[2]}`;
+  if (dotMatch?.[1] && dotMatch[2]) return `${dotMatch[1]}.${dotMatch[2]}`;
 
   // Extract contract name from explicit location (e.g. "Vault.sol:14-21")
   let contract: string | null = null;
   if (explicitLoc) {
     const m = explicitLoc.match(/`?(\w+)\.sol/);
-    if (m) contract = m[1];
+    if (m?.[1]) contract = m[1];
   }
 
   // Extract function name from title backticks (e.g. "Reentrancy in `withdraw()`")
@@ -101,7 +101,7 @@ function extractLocation(title: string, explicitLoc: string | null): string | nu
 
   // Last resort: look for "on `functionName`" or "in `functionName`"
   const inMatch = title.match(/(?:in|on)\s+`(\w+)`/);
-  if (inMatch) return inMatch[1];
+  if (inMatch?.[1]) return inMatch[1];
 
   return null;
 }
@@ -135,8 +135,8 @@ function makeRootCause(title: string, location: string | null): string {
   const vuln = classifyVuln(title);
   if (location) {
     const parts = location.split('.');
-    const contract = parts[0].toLowerCase();
-    const func = parts.length > 1 ? parts[1].toLowerCase() : null;
+    const contract = (parts[0] ?? '').toLowerCase();
+    const func = parts.length > 1 ? (parts[1] ?? '').toLowerCase() : null;
     if (func) return `${contract}::${func}::${vuln}`;
     if (vuln !== 'other') return `${contract}::${vuln}`;
     return `${contract}::${titleSlug(title)}`;
@@ -171,11 +171,11 @@ function parseSkillFormat(lines: string[]): ParseResult {
   let reportedCount: number | null = null;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const line = (lines[i] ?? '').trim();
 
     // Match finding header: [100] **1. Title**
     const m = SKILL_FINDING_RE.exec(line);
-    if (m) {
+    if (m?.[1] && m[2] && m[3]) {
       const confidence = parseInt(m[1], 10);
       const index = parseInt(m[2], 10);
       const title = m[3].trim();
@@ -183,8 +183,8 @@ function parseSkillFormat(lines: string[]): ParseResult {
       // Look for location on next non-empty line
       let location: string | null = null;
       for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-        const locMatch = SKILL_LOCATION_RE.exec(lines[j].trim());
-        if (locMatch) {
+        const locMatch = SKILL_LOCATION_RE.exec((lines[j] ?? '').trim());
+        if (locMatch?.[1]) {
           location = locMatch[1];
           break;
         }
@@ -205,7 +205,7 @@ function parseSkillFormat(lines: string[]): ParseResult {
 
     // Count rows in Findings List table for validation
     const tableMatch = SKILL_TABLE_ROW_RE.exec(line);
-    if (tableMatch) {
+    if (tableMatch?.[1]) {
       const rowNum = parseInt(tableMatch[1], 10);
       if (reportedCount === null || rowNum > reportedCount) {
         reportedCount = rowNum;
@@ -225,42 +225,41 @@ function parseBareFormat(lines: string[]): ParseResult {
   let currentContract: string | null = null;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const line = (lines[i] ?? '').trim();
 
     // Track section headers: ##+ Vault.sol, ##+ TokenSale.sol
     const sectionMatch = line.match(/^#{2,4}\s+(\w+)\.sol\s*$/);
-    if (sectionMatch) {
+    if (sectionMatch?.[1]) {
       currentContract = sectionMatch[1];
       continue;
     }
 
-    // Match [SEVERITY], H-1:/M-1:/L-1:, [H-1], or "N. Title — **SEVERITY**" formats
-    const m = BARE_FINDING_RE.exec(line);
-    const m2 = m ? null : BARE_NUMBERED_RE.exec(line);
-    const m2b = (m || m2) ? null : BARE_BRACKETED_NUM_RE.exec(line);
-    const m3 = (m || m2 || m2b) ? null : BARE_TRAILING_SEV_RE.exec(line);
-    const match = m || m2 || m2b || m3;
-    if (match) {
+    // Match bare finding headers across 4 format variants
+    const sevWordMatch = BARE_FINDING_RE.exec(line);          // ### [CRITICAL] Title
+    const sevPrefixMatch = sevWordMatch ? null : BARE_NUMBERED_RE.exec(line);     // ### H-1: Title
+    const sevBracketMatch = (sevWordMatch || sevPrefixMatch) ? null : BARE_BRACKETED_NUM_RE.exec(line); // ### [H-1] Title
+    const sevTrailingMatch = (sevWordMatch || sevPrefixMatch || sevBracketMatch) ? null : BARE_TRAILING_SEV_RE.exec(line); // ### 1. Title — **CRITICAL**
+    const bareMatch = sevWordMatch || sevPrefixMatch || sevBracketMatch || sevTrailingMatch;
+    if (bareMatch) {
       index++;
-      const sevMap: Record<string, string> = { H: 'HIGH', M: 'MEDIUM', L: 'LOW', I: 'INFO' };
+      const sevLetterMap: Record<string, string> = { H: 'HIGH', M: 'MEDIUM', L: 'LOW', I: 'INFO' };
       let severity: string;
       let title: string;
       let locStr: string | null;
-      if (m3) {
-        // Pattern 3: title is group 1, severity is group 2
-        title = m3[1].trim();
-        severity = m3[2].toUpperCase();
+      if (sevTrailingMatch?.[1] && sevTrailingMatch[2]) {
+        title = sevTrailingMatch[1].trim();
+        severity = sevTrailingMatch[2].toUpperCase();
         locStr = null;
-      } else if (m) {
-        severity = m[1].toUpperCase();
-        title = m[2].trim();
-        locStr = m[3] || null;
+      } else if (sevWordMatch?.[1] && sevWordMatch[2]) {
+        severity = sevWordMatch[1].toUpperCase();
+        title = sevWordMatch[2].trim();
+        locStr = sevWordMatch[3] ?? null;
       } else {
-        // m2 or m2b — both have same group structure (severity letter, title, optional loc)
-        const nm = (m2 || m2b)!;
-        severity = sevMap[nm[1].toUpperCase()] || nm[1].toUpperCase();
-        title = nm[2].trim();
-        locStr = nm[3] || null;
+        const numbered = (sevPrefixMatch ?? sevBracketMatch)!;
+        const sevLetter = numbered[1]?.toUpperCase() ?? '';
+        severity = sevLetterMap[sevLetter] ?? sevLetter;
+        title = (numbered[2] ?? '').trim();
+        locStr = numbered[3] ?? null;
       }
 
       // Try to extract location from title, fall back to current section contract
@@ -287,8 +286,9 @@ function parseBareFormat(lines: string[]): ParseResult {
     // 1. Aggregated: | Critical | 2 | ... |
     // 2. Per-finding: | Critical | Contract | Issue | ... |
     const summaryAgg = line.match(/^\|\s*(Critical|High|Medium|Low|Info)\s*\|\s*(\d+)\s*\|/i);
-    if (summaryAgg) {
-      const count = parseInt(summaryAgg[2], 10);
+    const aggCountStr = summaryAgg?.[2];
+    if (aggCountStr) {
+      const count = parseInt(aggCountStr, 10);
       reportedCount = (reportedCount ?? 0) + count;
     } else {
       const summaryRow = line.match(/^\|\s*(Critical|High|Medium|Low|Info)\s*\|/i);

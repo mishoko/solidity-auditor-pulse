@@ -221,7 +221,7 @@ class LiveMonitor {
     } else if (toolName === 'Bash') {
       const cmd = (input?.command as string) ?? '';
       const desc = (input?.description as string);
-      const display = desc || cmd.split('\n')[0];
+      const display = desc || (cmd.split('\n')[0] ?? '');
       this.out(`${prefix}Bash: ${trunc(display, 120)}`);
     } else if (toolName === 'Read') {
       const fp = (input?.file_path as string) ?? '';
