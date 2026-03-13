@@ -78,9 +78,9 @@ function formatDuration(ms: number): string {
 interface GTFinding {
   id: string;
   severity?: string;
-  title: string;
-  rootCause: string;
-  location: string;
+  title?: string;
+  rootCause?: string;
+  location?: string;
   line?: number;
   description: string;
   judgeVerdict?: string;
@@ -103,17 +103,17 @@ function loadGroundTruth(codebaseId: string): GroundTruth | null {
  */
 function matchesGT(finding: ParsedFinding, gt: GTFinding): boolean {
   const fLoc = (finding.location ?? '').toLowerCase();
-  const gtLoc = gt.location.toLowerCase();
+  const gtLoc = (gt.location ?? '').toLowerCase();
 
-  // Extract contract name from GT location (e.g. "DistributionCreator._createCampaign" → "distributioncreator")
-  const gtContract = (gtLoc.split('.')[0] ?? '').replace(/\s*\(.*$/, '');
-  const gtFunc = gtLoc.includes('.') ? (gtLoc.split('.')[1] ?? '').split(/\s/)[0] ?? '' : null;
-
-  // Contract match (finding location contains GT contract)
-  const contractMatch = fLoc.includes(gtContract) || gtContract.includes(fLoc.split('.')[0] ?? '');
-
-  // Function match
-  const funcMatch = gtFunc && fLoc.includes(gtFunc);
+  // Location-based matching (only when GT has location data)
+  let contractMatch = false;
+  let funcMatch = false;
+  if (gtLoc) {
+    const gtContract = (gtLoc.split('.')[0] ?? '').replace(/\s*\(.*$/, '');
+    const gtFunc = gtLoc.includes('.') ? (gtLoc.split('.')[1] ?? '').split(/\s/)[0] ?? '' : null;
+    contractMatch = fLoc.includes(gtContract) || gtContract.includes(fLoc.split('.')[0] ?? '');
+    funcMatch = !!(gtFunc && fLoc.includes(gtFunc));
+  }
 
   // Title keyword overlap (at least 2 significant words match)
   const gtWords = new Set(
@@ -243,6 +243,18 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
       push('');
     }
 
+    // Findings count chart (always shown)
+    push('### Findings');
+    push('');
+    push('```');
+    const maxFindings = Math.max(...runs.map(r => r.parse.findings.length), 1);
+    for (const run of runs) {
+      const label = conditionLabel(run.meta.conditionId).padEnd(8);
+      push(`${label} ${bar(run.parse.findings.length, maxFindings)} ${run.parse.findings.length} finding(s)`);
+    }
+    push('```');
+    push('');
+
     // Duration chart
     push('### Duration');
     push('');
@@ -255,7 +267,23 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
     push('```');
     push('');
 
-    // Findings detail table
+    // Per-condition findings list (always shown)
+    for (const run of runs) {
+      const label = conditionLabel(run.meta.conditionId);
+      if (run.parse.findings.length === 0) continue;
+      push(`<details><summary>${label} — ${run.parse.findings.length} finding(s)</summary>`);
+      push('');
+      for (const f of run.parse.findings) {
+        const conf = f.confidence !== null ? ` [${f.confidence}]` : '';
+        const loc = f.location ? ` · ${f.location}` : '';
+        push(`- ${f.title}${conf}${loc}`);
+      }
+      push('');
+      push('</details>');
+      push('');
+    }
+
+    // GT-based sections (only when ground truth available)
     if (gt) {
       push('### Findings Matrix');
       push('');
@@ -268,13 +296,11 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
           const match = run.parse.findings.find(f => matchesGT(f, g));
           if (!match) return '-';
           if (match.confidence !== null) return `[${match.confidence}]`;
-          if (match.severity) return match.severity.slice(0, 4).toUpperCase();
           return '✓';
         });
-        const sev = ((g.severity ?? '?')[0] ?? '?').toUpperCase();
         const rawTitle = g.title ?? g.description;
         const title = rawTitle.length > 55 ? rawTitle.slice(0, 52) + '...' : rawTitle;
-        push(`| ${sev}-${g.id.replace(/^[HML]-/, '')} | ${title} | ${cells.join(' | ')} |`);
+        push(`| ${g.id} | ${title} | ${cells.join(' | ')} |`);
       }
       push('');
     }

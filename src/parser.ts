@@ -51,8 +51,10 @@ const BARE_FINDING_RE = /^#{2,4}\s+\[(CRITICAL|HIGH|MEDIUM|LOW|INFO)\]\s+(.+?)(?
 const BARE_NUMBERED_RE = /^#{2,4}\s+(H|M|L|I)-\d+:\s+(.+?)(?:\s+—\s+(.+))?$/i;
 // Pattern 2b: ### [H-1] Title (numbered severity prefix, bracketed)
 const BARE_BRACKETED_NUM_RE = /^#{2,4}\s+\[(H|M|L|I)-\d+\]\s+(.+?)(?:\s+—\s+(.+))?$/i;
-// Pattern 3: ### N. Title — **SEVERITY** (numbered with trailing severity)
+// Pattern 3: ### N. Title — **SEVERITY** (numbered with trailing bold severity)
 const BARE_TRAILING_SEV_RE = /^#{2,4}\s+\d+\.\s+(.+?)\s+—\s+\*\*(CRITICAL|HIGH|MEDIUM|LOW|INFO)\*\*$/i;
+// Pattern 4: ### N. Title (SEVERITY) (numbered with parenthesized severity)
+const BARE_PAREN_SEV_RE = /^#{2,4}\s+\d+\.\s+(.+?)\s+\((Critical|High|Medium|Low|Info)\)\s*$/i;
 
 // --- Vulnerability classification (used for ground truth matching, not for root cause key) ---
 const VULN_KEYWORDS: [RegExp, string][] = [
@@ -148,11 +150,12 @@ export function parseOutput(text: string): ParseResult {
   const lines = text.split('\n');
 
   // Detect format
-  const hasSkillHeader = text.includes('🔐 Security Review') || text.includes('## Scope');
+  const hasSkillHeader = text.includes('🔐 Security Review');
   const hasBareHeader = /^#{2,4}\s+\[(CRITICAL|HIGH|MEDIUM|LOW)/im.test(text)
     || /^#{2,4}\s+(H|M|L|I)-\d+:/im.test(text)
     || /^#{2,4}\s+\[(H|M|L|I)-\d+\]/im.test(text)
-    || /^#{2,4}\s+\d+\.\s+.+?\s+—\s+\*\*(CRITICAL|HIGH|MEDIUM|LOW|INFO)\*\*/im.test(text);
+    || /^#{2,4}\s+\d+\.\s+.+?\s+—\s+\*\*(CRITICAL|HIGH|MEDIUM|LOW|INFO)\*\*/im.test(text)
+    || /^#{2,4}\s+\d+\.\s+.+?\s+\((Critical|High|Medium|Low|Info)\)/im.test(text);
 
   if (hasSkillHeader) return parseSkillFormat(lines);
   if (hasBareHeader) return parseBareFormat(lines);
@@ -239,16 +242,19 @@ function parseBareFormat(lines: string[]): ParseResult {
     const sevPrefixMatch = sevWordMatch ? null : BARE_NUMBERED_RE.exec(line);     // ### H-1: Title
     const sevBracketMatch = (sevWordMatch || sevPrefixMatch) ? null : BARE_BRACKETED_NUM_RE.exec(line); // ### [H-1] Title
     const sevTrailingMatch = (sevWordMatch || sevPrefixMatch || sevBracketMatch) ? null : BARE_TRAILING_SEV_RE.exec(line); // ### 1. Title — **CRITICAL**
-    const bareMatch = sevWordMatch || sevPrefixMatch || sevBracketMatch || sevTrailingMatch;
+    const sevParenMatch = (sevWordMatch || sevPrefixMatch || sevBracketMatch || sevTrailingMatch) ? null : BARE_PAREN_SEV_RE.exec(line); // ### 1. Title (Critical)
+    const bareMatch = sevWordMatch || sevPrefixMatch || sevBracketMatch || sevTrailingMatch || sevParenMatch;
     if (bareMatch) {
       index++;
       const sevLetterMap: Record<string, string> = { H: 'HIGH', M: 'MEDIUM', L: 'LOW', I: 'INFO' };
       let severity: string;
       let title: string;
       let locStr: string | null;
-      if (sevTrailingMatch?.[1] && sevTrailingMatch[2]) {
-        title = sevTrailingMatch[1].trim();
-        severity = sevTrailingMatch[2].toUpperCase();
+      // Patterns 3 & 4: title in group 1, severity in group 2
+      const trailOrParen = sevTrailingMatch ?? sevParenMatch;
+      if (trailOrParen?.[1] && trailOrParen[2]) {
+        title = trailOrParen[1].trim();
+        severity = trailOrParen[2].toUpperCase();
         locStr = null;
       } else if (sevWordMatch?.[1] && sevWordMatch[2]) {
         severity = sevWordMatch[1].toUpperCase();
