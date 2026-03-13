@@ -26,6 +26,10 @@
     {
       "id": "brix",
       "path": "datasets/brix"
+    },
+    {
+      "id": "nft-dealers",
+      "path": "datasets/nft-dealers"
     }
   ],
   "conditions": [

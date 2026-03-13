@@ -13,3 +13,6 @@
 [submodule "datasets/brix"]
 	path = datasets/brix
 	url = https://github.com/code-423n4/2025-11-brix-money
+[submodule "datasets/nft-dealers"]
+	path = datasets/nft-dealers
+	url = https://github.com/CodeHawks-Contests/2026-03-NFT-dealers.git
