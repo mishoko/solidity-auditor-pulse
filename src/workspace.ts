@@ -217,6 +217,15 @@ export async function resolveGitCommit(dirPath: string): Promise<string | undefi
 }
 
 /**
+ * Resets the workspace cache so next prepareWorkspace() calls
+ * will re-create fresh copies. Use between iterations to prevent
+ * stale state from one run leaking into the next.
+ */
+export function resetWorkspaceCache(): void {
+  preparedWorkspaces.clear();
+}
+
+/**
  * Cleans up all workspaces. Call after the full benchmark suite completes.
  */
 export function cleanupWorkspaces(): void {

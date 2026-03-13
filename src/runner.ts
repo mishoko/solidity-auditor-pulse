@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { BenchConfig, CliOptions, CodebaseConfig, ConditionConfig, RunMeta } from './types.js';
-import { getRunCwd, prepareWorkspace, resolveGitCommit, cleanupWorkspaces } from './workspace.js';
+import { getRunCwd, prepareWorkspace, resolveGitCommit, cleanupWorkspaces, resetWorkspaceCache } from './workspace.js';
 import { skillSrcPath, resolveSkillGitCommit } from './skill.js';
 import { spawnClaude } from './util/shell.js';
 import { verifyRun, printVerifyResults, type VerifyResult } from './verify.js';
@@ -141,8 +141,12 @@ export async function runBench(config: BenchConfig, opts: CliOptions): Promise<R
   const runs = opts.runsOverride ?? config.defaultRunsPerCondition;
   const total = codebases.length * conditions.length * runs;
 
-  // Prepare all workspaces upfront (one per codebase × condition)
-  if (!opts.dryRun) {
+  // Prepare fresh workspaces for all (codebase, condition) pairs.
+  // Called before each iteration to ensure clean state — no leftover
+  // files from a previous run can leak into the next.
+  async function prepareAllWorkspaces(): Promise<void> {
+    if (opts.dryRun) return;
+    resetWorkspaceCache();
     for (const codebase of codebases) {
       for (const condition of conditions) {
         const skillVersion = condition.type === 'skill' ? condition.skillVersion : null;
@@ -164,6 +168,7 @@ export async function runBench(config: BenchConfig, opts: CliOptions): Promise<R
     log.info(`Parallel mode: ${codebases.length} codebase(s) × ${conditions.length} conditions concurrently per iteration`);
 
     for (let i = 1; i <= runs; i++) {
+      await prepareAllWorkspaces();
       log.separator();
       log.info(`[PARALLEL] Starting iteration ${i} — ${codebases.length * conditions.length} runs`);
       let completed = 0;
@@ -189,6 +194,7 @@ export async function runBench(config: BenchConfig, opts: CliOptions): Promise<R
     for (const codebase of codebases) {
       for (const condition of conditions) {
         for (let i = 1; i <= runs; i++) {
+          await prepareAllWorkspaces();
           const meta = await runSingle(codebase, condition, i, opts);
           results.push(meta);
         }
