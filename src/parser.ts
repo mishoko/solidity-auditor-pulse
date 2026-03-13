@@ -47,14 +47,16 @@ const SKILL_TABLE_ROW_RE = /^\|\s*(\d+)\s*\|\s*\[(\d+)\]\s*\|\s*(.+?)\s*\|/;
 // --- Bare format parsing ---
 // Pattern 1: ##+ [SEVERITY] Title — Location (bare Claude uses variable header levels)
 const BARE_FINDING_RE = /^#{2,4}\s+\[(CRITICAL|HIGH|MEDIUM|LOW|INFO)\]\s+(.+?)(?:\s+—\s+(.+))?$/i;
-// Pattern 2: ### H-1: Title, ### M-1: Title, ### L-1: Title (numbered severity prefix, with colon)
-const BARE_NUMBERED_RE = /^#{2,4}\s+(H|M|L|I)-\d+:\s+(.+?)(?:\s+—\s+(.+))?$/i;
+// Pattern 2: ### H-1: Title, ### C-1. Title (numbered severity prefix, colon or dot separator)
+const BARE_NUMBERED_RE = /^#{2,4}\s+(C|H|M|L|I)-\d+[.:]\s+(.+?)(?:\s+—\s+(.+))?$/i;
 // Pattern 2b: ### [H-1] Title (numbered severity prefix, bracketed)
-const BARE_BRACKETED_NUM_RE = /^#{2,4}\s+\[(H|M|L|I)-\d+\]\s+(.+?)(?:\s+—\s+(.+))?$/i;
+const BARE_BRACKETED_NUM_RE = /^#{2,4}\s+\[(C|H|M|L|I)-\d+\]\s+(.+?)(?:\s+—\s+(.+))?$/i;
 // Pattern 3: ### N. Title — **SEVERITY** (numbered with trailing bold severity)
 const BARE_TRAILING_SEV_RE = /^#{2,4}\s+\d+\.\s+(.+?)\s+—\s+\*\*(CRITICAL|HIGH|MEDIUM|LOW|INFO)\*\*$/i;
 // Pattern 4: ### N. Title (SEVERITY) (numbered with parenthesized severity)
 const BARE_PAREN_SEV_RE = /^#{2,4}\s+\d+\.\s+(.+?)\s+\((Critical|High|Medium|Low|Info)\)\s*$/i;
+// Pattern 5: **N. [SEVERITY] Title — Location** — bold inline (no heading, severity in brackets)
+const BARE_BOLD_INLINE_RE = /^\*\*\d+\.\s+\[(CRITICAL|HIGH|MEDIUM|LOW|INFO)\]\s+(.+?)(?:\s+—\s+(.+?))?\*\*\s*$/i;
 
 // --- Vulnerability classification (used for ground truth matching, not for root cause key) ---
 const VULN_KEYWORDS: [RegExp, string][] = [
@@ -237,16 +239,17 @@ function parseBareFormat(lines: string[]): ParseResult {
       continue;
     }
 
-    // Match bare finding headers across 4 format variants
+    // Match bare finding headers across 6 format variants
     const sevWordMatch = BARE_FINDING_RE.exec(line);          // ### [CRITICAL] Title
     const sevPrefixMatch = sevWordMatch ? null : BARE_NUMBERED_RE.exec(line);     // ### H-1: Title
     const sevBracketMatch = (sevWordMatch || sevPrefixMatch) ? null : BARE_BRACKETED_NUM_RE.exec(line); // ### [H-1] Title
     const sevTrailingMatch = (sevWordMatch || sevPrefixMatch || sevBracketMatch) ? null : BARE_TRAILING_SEV_RE.exec(line); // ### 1. Title — **CRITICAL**
     const sevParenMatch = (sevWordMatch || sevPrefixMatch || sevBracketMatch || sevTrailingMatch) ? null : BARE_PAREN_SEV_RE.exec(line); // ### 1. Title (Critical)
-    const bareMatch = sevWordMatch || sevPrefixMatch || sevBracketMatch || sevTrailingMatch || sevParenMatch;
+    const sevBoldMatch = (sevWordMatch || sevPrefixMatch || sevBracketMatch || sevTrailingMatch || sevParenMatch) ? null : BARE_BOLD_INLINE_RE.exec(line); // **1. [CRITICAL] Title**
+    const bareMatch = sevWordMatch || sevPrefixMatch || sevBracketMatch || sevTrailingMatch || sevParenMatch || sevBoldMatch;
     if (bareMatch) {
       index++;
-      const sevLetterMap: Record<string, string> = { H: 'HIGH', M: 'MEDIUM', L: 'LOW', I: 'INFO' };
+      const sevLetterMap: Record<string, string> = { C: 'CRITICAL', H: 'HIGH', M: 'MEDIUM', L: 'LOW', I: 'INFO' };
       let severity: string;
       let title: string;
       let locStr: string | null;
@@ -256,6 +259,11 @@ function parseBareFormat(lines: string[]): ParseResult {
         title = trailOrParen[1].trim();
         severity = trailOrParen[2].toUpperCase();
         locStr = null;
+      } else if (sevBoldMatch?.[1] && sevBoldMatch[2]) {
+        // Pattern 5: **N. [SEVERITY] Title — Location** — severity in [1], title in [2], location in [3]
+        severity = sevBoldMatch[1].toUpperCase();
+        title = sevBoldMatch[2].trim();
+        locStr = sevBoldMatch[3] ?? null;
       } else if (sevWordMatch?.[1] && sevWordMatch[2]) {
         severity = sevWordMatch[1].toUpperCase();
         title = sevWordMatch[2].trim();

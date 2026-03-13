@@ -69,8 +69,11 @@ npm run bench
 # Dry run (shows what would run, no claude spawned)
 npm run bench:dry
 
-# Generate summary report from existing results
-npm run summary:results
+# Generate summary report (latest run per condition)
+npm run summary:last-run
+
+# Generate summary report (all runs — shows consistency across iterations)
+npm run summary:all-runs
 
 # Build TypeScript
 npm run build
@@ -115,7 +118,7 @@ Each finding gets a location (`Contract.function`), vulnerability classification
 
 ## Summary Report
 
-`npm run summary:results` generates `summary.md` with:
+`npm run summary:last-run` / `npm run summary:all-runs` generates `summary.md` with:
 
 - Overview table (all runs with findings count, duration, cost)
 - Per-codebase sections with ASCII bar charts for recall, false positives, and duration

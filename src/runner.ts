@@ -18,6 +18,22 @@ function ensureResultsDir(): void {
   fs.mkdirSync(path.join(ROOT, 'results'), { recursive: true });
 }
 
+function extractModelFromEvents(runId: string): string | undefined {
+  const eventsPath = path.join(ROOT, 'results', `${runId}.events.jsonl`);
+  if (!fs.existsSync(eventsPath)) return undefined;
+  try {
+    const lines = fs.readFileSync(eventsPath, 'utf8').split('\n');
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const evt = JSON.parse(line);
+      if (evt.type === 'assistant' && evt.message?.model) {
+        return evt.message.model as string;
+      }
+    }
+  } catch { /* ignore parse errors */ }
+  return undefined;
+}
+
 async function getClaudeVersion(): Promise<string | undefined> {
   try {
     const { execSimple } = await import('./util/shell.js');
@@ -84,7 +100,7 @@ async function runSingle(
     mode: condition.type,
     deep: condition.type === 'skill' ? condition.deep : undefined,
     fileOutput: condition.type === 'skill' ? condition.fileOutput : undefined,
-    claudeModel: opts.model,
+    claudeModel: opts.model ?? extractModelFromEvents(runId),
     claudeCliVersion,
     exitCode,
     durationMs,
@@ -144,25 +160,30 @@ export async function runBench(config: BenchConfig, opts: CliOptions): Promise<R
 
   const results: RunMeta[] = [];
 
-  if (opts.parallel && conditions.length > 1) {
-    log.info(`Parallel mode: ${conditions.length} conditions will run concurrently per iteration`);
+  if (opts.parallel && (conditions.length > 1 || codebases.length > 1)) {
+    log.info(`Parallel mode: ${codebases.length} codebase(s) × ${conditions.length} conditions concurrently per iteration`);
 
-    for (const codebase of codebases) {
-      for (let i = 1; i <= runs; i++) {
-        log.separator();
-        log.info(`[PARALLEL] Starting iteration ${i} for ${codebase.id} — ${conditions.length} conditions`);
-        let completed = 0;
+    for (let i = 1; i <= runs; i++) {
+      log.separator();
+      log.info(`[PARALLEL] Starting iteration ${i} — ${codebases.length * conditions.length} runs`);
+      let completed = 0;
+      const totalParallel = codebases.length * conditions.length;
 
-        const promises = conditions.map(async (condition) => {
-          const meta = await runSingle(codebase, condition, i, opts);
-          completed++;
-          log.info(`[PARALLEL] ${condition.id} done (${completed}/${conditions.length})`);
-          return meta;
-        });
-
-        const iterResults = await Promise.all(promises);
-        results.push(...iterResults);
+      const promises: Promise<RunMeta>[] = [];
+      for (const codebase of codebases) {
+        for (const condition of conditions) {
+          promises.push(
+            runSingle(codebase, condition, i, opts).then(meta => {
+              completed++;
+              log.info(`[PARALLEL] ${codebase.id}/${condition.id} done (${completed}/${totalParallel})`);
+              return meta;
+            })
+          );
+        }
       }
+
+      const iterResults = await Promise.all(promises);
+      results.push(...iterResults);
     }
   } else {
     for (const codebase of codebases) {

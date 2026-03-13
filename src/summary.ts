@@ -2,7 +2,10 @@
  * Reads results/*.meta.json + *.stdout.txt, parses findings,
  * and generates a comparison markdown report with graphical elements.
  *
- * Uses ONLY the latest run per (codebase, condition) — ignores older test runs.
+ * Two modes:
+ *   --all-runs: includes every valid run (shows consistency across iterations)
+ *   default:    uses ONLY the latest run per (codebase, condition)
+ *
  * Matches findings against ground truth using location-based fuzzy matching.
  */
 
@@ -33,22 +36,11 @@ function conditionSortIndex(id: string): number {
   return idx >= 0 ? idx : 999;
 }
 
-function loadLatestRuns(resultsDir: string): RunData[] {
+function loadValidRuns(resultsDir: string): RunData[] {
   const runs: RunData[] = [];
   const metaFiles = fs.readdirSync(resultsDir).filter(f => f.endsWith('.meta.json'));
 
-  // Keep only the latest run per (codebase, condition)
-  const latest = new Map<string, { file: string; ts: string }>();
   for (const file of metaFiles) {
-    const meta: RunMeta = JSON.parse(fs.readFileSync(path.join(resultsDir, file), 'utf8'));
-    const key = `${meta.codebaseId}::${meta.conditionId}`;
-    const existing = latest.get(key);
-    if (!existing || meta.timestampUtc > existing.ts) {
-      latest.set(key, { file, ts: meta.timestampUtc });
-    }
-  }
-
-  for (const { file } of latest.values()) {
     const meta: RunMeta = JSON.parse(fs.readFileSync(path.join(resultsDir, file), 'utf8'));
 
     // Accept exitCode 0 or 143 (grace-killed after result received)
@@ -62,7 +54,25 @@ function loadLatestRuns(resultsDir: string): RunData[] {
     runs.push({ meta, parse });
   }
 
+  // Sort by timestamp (oldest first) for consistent ordering
+  runs.sort((a, b) => a.meta.timestampUtc.localeCompare(b.meta.timestampUtc));
   return runs;
+}
+
+function loadLatestRuns(resultsDir: string): RunData[] {
+  const all = loadValidRuns(resultsDir);
+
+  // Keep only the latest run per (codebase, condition)
+  const latest = new Map<string, RunData>();
+  for (const run of all) {
+    const key = `${run.meta.codebaseId}::${run.meta.conditionId}`;
+    const existing = latest.get(key);
+    if (!existing || run.meta.timestampUtc > existing.meta.timestampUtc) {
+      latest.set(key, run);
+    }
+  }
+
+  return [...latest.values()];
 }
 
 function formatDuration(ms: number): string {
@@ -133,6 +143,38 @@ function matchesGT(finding: ParsedFinding, gt: GTFinding): boolean {
   return false;
 }
 
+/**
+ * Assigns display labels to runs. When multiple runs share the same condition
+ * within a codebase, appends a run number: "Bare CC #1", "Bare CC #2".
+ */
+function assignRunLabels(runs: RunData[]): Map<RunData, string> {
+  const labels = new Map<RunData, string>();
+  const counts = new Map<string, number>();
+
+  // Count occurrences of each condition
+  for (const run of runs) {
+    const key = run.meta.conditionId;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  // Assign labels with run numbers when needed
+  const seen = new Map<string, number>();
+  for (const run of runs) {
+    const key = run.meta.conditionId;
+    const base = conditionLabel(key);
+    const total = counts.get(key) ?? 1;
+    if (total === 1) {
+      labels.set(run, base);
+    } else {
+      const n = (seen.get(key) ?? 0) + 1;
+      seen.set(key, n);
+      labels.set(run, `${base} #${n}`);
+    }
+  }
+
+  return labels;
+}
+
 // ─── ASCII Bar Chart ───
 
 function bar(value: number, max: number, width: number = 20): string {
@@ -143,8 +185,8 @@ function bar(value: number, max: number, width: number = 20): string {
 
 // ─── Report Generation ───
 
-export function generateSummary(resultsDir: string, outputPath: string): void {
-  const allRuns = loadLatestRuns(resultsDir);
+export function generateSummary(resultsDir: string, outputPath: string, showAllRuns: boolean = false): void {
+  const allRuns = showAllRuns ? loadValidRuns(resultsDir) : loadLatestRuns(resultsDir);
   if (allRuns.length === 0) {
     log.warn('No results found');
     return;
@@ -155,7 +197,11 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
 
   push('# Benchmark Results');
   push('');
-  push(`> Generated: ${new Date().toISOString().split('T')[0]}`);
+  push(`> Generated: ${new Date().toISOString().split('T')[0]}${showAllRuns ? ' · All runs' : ' · Latest run per condition'}`);
+  if (showAllRuns) {
+    push('>');
+    push('> **#N** after a condition name indicates the run number (e.g. Bare CC #2 = second run of that condition).');
+  }
   push('');
 
   // Group by codebase, sorted by condition order
@@ -166,17 +212,31 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
     byCodebase.set(run.meta.codebaseId, arr);
   }
   for (const runs of byCodebase.values()) {
-    runs.sort((a, b) => conditionSortIndex(a.meta.conditionId) - conditionSortIndex(b.meta.conditionId));
+    runs.sort((a, b) => {
+      const condDiff = conditionSortIndex(a.meta.conditionId) - conditionSortIndex(b.meta.conditionId);
+      if (condDiff !== 0) return condDiff;
+      // Within same condition, sort by timestamp (oldest first)
+      return a.meta.timestampUtc.localeCompare(b.meta.timestampUtc);
+    });
   }
+
+  // Pre-compute labels per codebase (handles run numbering in --all-runs mode)
+  const labelsByCodebase = new Map<string, Map<RunData, string>>();
+  for (const [codebaseId, runs] of byCodebase) {
+    labelsByCodebase.set(codebaseId, assignRunLabels(runs));
+  }
+  const getLabel = (codebaseId: string, run: RunData): string =>
+    labelsByCodebase.get(codebaseId)?.get(run) ?? conditionLabel(run.meta.conditionId);
 
   // Overview table
   push('## Overview');
   push('');
-  push('| Codebase | Condition | Findings | Duration | Cost |');
-  push('|----------|-----------|----------|----------|------|');
+  push('| Codebase | Condition | Model | Findings | Duration | Cost |');
+  push('|----------|-----------|-------|----------|----------|------|');
   for (const [codebaseId, runs] of byCodebase) {
     for (const run of runs) {
-      const label = conditionLabel(run.meta.conditionId);
+      const label = getLabel(codebaseId, run);
+      const model = run.meta.claudeModel ?? '-';
       const dur = formatDuration(run.meta.durationMs);
       // Try to extract cost from events
       const eventsPath = path.join(resultsDir, `${run.meta.runId}.events.jsonl`);
@@ -186,7 +246,7 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
         const costMatch = eventsText.match(/"total_cost_usd":\s*([\d.]+)/);
         if (costMatch?.[1]) cost = `$${parseFloat(costMatch[1]).toFixed(2)}`;
       }
-      push(`| ${codebaseId} | ${label} | ${run.parse.findings.length} | ${dur} | ${cost} |`);
+      push(`| ${codebaseId} | ${label} | ${model} | ${run.parse.findings.length} | ${dur} | ${cost} |`);
     }
   }
   push('');
@@ -195,6 +255,7 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
   for (const [codebaseId, runs] of byCodebase) {
     const gt = loadGroundTruth(codebaseId);
     const gtCount = gt?.findings.length ?? 0;
+    const maxLabelLen = Math.max(...runs.map(r => getLabel(codebaseId, r).length), 8);
 
     push(`## ${codebaseId}`);
     push('');
@@ -205,7 +266,7 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
       push('');
       push('```');
       for (const run of runs) {
-        const label = conditionLabel(run.meta.conditionId).padEnd(8);
+        const label = getLabel(codebaseId, run).padEnd(maxLabelLen);
         const matched = gt.findings.filter(g => run.parse.findings.some(f => matchesGT(f, g)));
         const matchedIds = matched.map(g => g.id);
         const recallPct = gtCount > 0 ? Math.round((matched.length / gtCount) * 100) : 0;
@@ -233,11 +294,11 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
       push('### False Positives');
       push('');
       push('```');
-      const maxFindings = Math.max(...runs.map(r => r.parse.findings.length), 1);
+      const maxFpFindings = Math.max(...runs.map(r => r.parse.findings.length), 1);
       for (const run of runs) {
-        const label = conditionLabel(run.meta.conditionId).padEnd(8);
+        const label = getLabel(codebaseId, run).padEnd(maxLabelLen);
         const fps = run.parse.findings.filter(f => !gt.findings.some(g => matchesGT(f, g)));
-        push(`${label} ${bar(fps.length, maxFindings)} ${fps.length} FP(s)${fps.length > 0 ? ': ' + fps.map(f => f.title.slice(0, 40)).join('; ') : ''}`);
+        push(`${label} ${bar(fps.length, maxFpFindings)} ${fps.length} FP(s)${fps.length > 0 ? ': ' + fps.map(f => f.title.slice(0, 40)).join('; ') : ''}`);
       }
       push('```');
       push('');
@@ -249,7 +310,7 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
     push('```');
     const maxFindings = Math.max(...runs.map(r => r.parse.findings.length), 1);
     for (const run of runs) {
-      const label = conditionLabel(run.meta.conditionId).padEnd(8);
+      const label = getLabel(codebaseId, run).padEnd(maxLabelLen);
       push(`${label} ${bar(run.parse.findings.length, maxFindings)} ${run.parse.findings.length} finding(s)`);
     }
     push('```');
@@ -261,15 +322,15 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
     push('```');
     const maxDur = Math.max(...runs.map(r => r.meta.durationMs));
     for (const run of runs) {
-      const label = conditionLabel(run.meta.conditionId).padEnd(8);
+      const label = getLabel(codebaseId, run).padEnd(maxLabelLen);
       push(`${label} ${bar(run.meta.durationMs, maxDur)} ${formatDuration(run.meta.durationMs)}`);
     }
     push('```');
     push('');
 
-    // Per-condition findings list (always shown)
+    // Per-run findings list (always shown)
     for (const run of runs) {
-      const label = conditionLabel(run.meta.conditionId);
+      const label = getLabel(codebaseId, run);
       if (run.parse.findings.length === 0) continue;
       push(`<details><summary>${label} — ${run.parse.findings.length} finding(s)</summary>`);
       push('');
@@ -287,9 +348,9 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
     if (gt) {
       push('### Findings Matrix');
       push('');
-      const colHeaders = runs.map(r => conditionLabel(r.meta.conditionId));
-      push(`| GT | Finding | ${colHeaders.join(' | ')} |`);
-      push(`| -- | ------- | ${colHeaders.map(() => '---').join(' | ')} |`);
+      const colHeaders = runs.map(r => getLabel(codebaseId, r));
+      push(`| Ground Truth | Finding | ${colHeaders.join(' | ')} |`);
+      push(`| ------------ | ------- | ${colHeaders.map(() => '---').join(' | ')} |`);
 
       for (const g of gt.findings) {
         const cells = runs.map(run => {
@@ -313,6 +374,7 @@ export function generateSummary(resultsDir: string, outputPath: string): void {
 }
 
 // CLI entrypoint
+const showAllRuns = process.argv.includes('--all-runs');
 const resultsDir = path.resolve(process.cwd(), 'results');
 const outputPath = path.resolve(process.cwd(), 'summary.md');
-generateSummary(resultsDir, outputPath);
+generateSummary(resultsDir, outputPath, showAllRuns);

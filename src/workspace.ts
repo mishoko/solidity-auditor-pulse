@@ -90,13 +90,14 @@ export async function prepareWorkspace(
     const skillDest = path.join(commandsDir, 'solidity-auditor');
     await execSimple(`cp -R "${skillSrcPath}" "${skillDest}"`);
 
-    // Fix /tmp/ collision: rewrite hardcoded /tmp/audit- paths to condition-scoped paths.
+    // Fix /tmp/ collision: rewrite hardcoded /tmp/audit- paths to fully-scoped paths.
     // V1 and V2 skills both create /tmp/audit-agent-{N}-bundle.md. When running in parallel
-    // they'd clobber each other. Prefix with conditionId to isolate.
+    // (across conditions AND codebases) they'd clobber each other.
+    // Scope by both codebaseId and conditionId to fully isolate.
     const skillMd = path.join(skillDest, 'SKILL.md');
     if (fs.existsSync(skillMd)) {
       let content = fs.readFileSync(skillMd, 'utf8');
-      const tmpPrefix = `/tmp/audit-${conditionId}-`;
+      const tmpPrefix = `/tmp/audit-${codebaseId}-${conditionId}-`;
       content = content.replace(/\/tmp\/audit-/g, tmpPrefix);
 
       // Inject canary control string for isolation verification.
@@ -105,7 +106,7 @@ export async function prepareWorkspace(
       content += `\n\n<!-- BENCHMARK_CONTROL: ${canary} -->\n`;
 
       fs.writeFileSync(skillMd, content);
-      log.info(`Skill patched: /tmp/ → ${tmpPrefix}*, canary: ${canary}`);
+      log.info(`Skill patched: /tmp/ → ${tmpPrefix}…, canary: ${canary}`);
     }
 
     verifySkillVersion(wsDir, skillVersion);

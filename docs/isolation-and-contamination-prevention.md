@@ -76,10 +76,11 @@ Every workspace gets a `CLAUDE.md` file at its root, regardless of condition typ
 
 **Source:** `src/workspace.ts` — SKILL.md patching
 
-The V1 and V2 skills use hardcoded `/tmp/audit-*` paths for intermediate files (agent bundles, temp reports). When running conditions in parallel, these paths collide.
+The V1 and V2 skills use hardcoded `/tmp/audit-*` paths for intermediate files (agent bundles, temp reports). When running in parallel — across both conditions AND codebases — these paths collide.
 
-The workspace preparation rewrites all `/tmp/audit-` references in the skill's SKILL.md to `/tmp/audit-<conditionId>-`, giving each condition a unique temp namespace. This prevents:
+The workspace preparation rewrites all `/tmp/audit-` references in the skill's SKILL.md to `/tmp/audit-<codebaseId>-<conditionId>-`, giving each (codebase, condition) pair a unique temp namespace. This prevents:
 - One condition's agent overwriting another's bundle file
+- Two codebases running the same condition clobbering each other's temp files
 - Race conditions on shared temp paths
 - Corrupted output from interleaved writes
 
@@ -211,15 +212,25 @@ The events file enables deep post-hoc analysis: which tools were called, which f
 | Parent CLAUDE.md walk-up | Workspace-level CLAUDE.md blocker | Covered | High |
 | Shared workspace interference | Per-condition workspace isolation | Covered | High |
 | Env var inheritance | Full `CLAUDE_CODE*` stripping | Covered | High |
-| Shared /tmp files | Per-condition path rewriting | Covered | Medium |
+| Shared /tmp files | Per-codebase-per-condition path rewriting | Covered | High |
 | User settings leak | `--setting-sources project,local` | Covered | Medium |
 | Scope drift | CLAUDE.md scope injection + post-run scope compliance checks | Covered | Medium |
 
 **Medium confidence items:**
 
-- **/tmp rewriting** depends on the skill using the exact `/tmp/audit-` prefix. If a skill version uses a different temp path pattern, it won't be caught.
+- **/tmp rewriting** depends on the skill using the exact `/tmp/audit-` prefix. If a skill version uses a different temp path pattern, it won't be caught. Now scoped by both codebase and condition (`/tmp/audit-<codebaseId>-<conditionId>-`).
 - **Setting sources** only blocks `settings.json`, not all user-level config. If Claude Code adds new user-level config mechanisms, this may not cover them.
 - **Scope compliance** uses heuristic name matching (contract names in findings text). Generic names like "Errors", "Utils", "Base" are filtered to avoid false positives, but edge cases may slip through.
+
+---
+
+## Parallelism Testing Status
+
+**Cross-condition parallelism (1 codebase × N conditions):** Tested and proven. merkl ran V2 + V1 + Bare CC concurrently with correct results and no contamination (2026-03-12).
+
+**Cross-codebase parallelism (N codebases × 1 condition):** Tested with bare CC on canary + nft-dealers (2026-03-13). Both ran concurrently, all verification checks passed, no cross-contamination. Workspaces fully independent.
+
+**Full matrix parallelism (N codebases × M conditions):** Not yet tested. Running 2 codebases × 3 conditions = 6 processes, each skill condition spawning 4-6 agents = ~30 concurrent API calls. Rate limit impact on Claude Max subscription is unknown. The isolation infrastructure is in place (per-codebase-per-condition `/tmp` scoping, unique workspaces, unique result files), but a live test with skill conditions has not been performed due to rate limit concerns.
 
 ---
 
@@ -229,6 +240,6 @@ The events file enables deep post-hoc analysis: which tools were called, which f
 
 2. **No network isolation.** Claude can still access the internet during runs. If the skill or Claude fetches external resources, those aren't controlled.
 
-3. **Model version pinning is config-level only.** The `--model` flag is passed per the config, but there's no post-run verification that the actual model used matches what was requested (Anthropic could route to a different model silently).
+3. **Model version pinning is config-level only.** The `--model` flag is passed per the config, but the model is now recorded from the actual events stream (`claudeModel` in meta.json). No verification that it matches what was requested, but post-hoc detection is possible.
 
-4. **Codebase-level parallelism not implemented.** Currently only conditions run in parallel within an iteration. Running multiple codebases in parallel would require additional isolation for rate limits and API quotas.
+4. **Rate limits under heavy parallelism.** Running N codebases × M conditions in parallel creates N×M concurrent Claude processes, each potentially spawning 4-6 agents. With 6 processes and ~30 agents, Anthropic rate limits may cause agent failures or retries that skew timing results. No mitigation beyond Anthropic's built-in backoff.
