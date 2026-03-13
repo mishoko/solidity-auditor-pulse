@@ -24,6 +24,10 @@
       "path": "datasets/merkl"
     },
     {
+      "id": "merkl-stripped",
+      "path": "datasets/merkl-stripped"
+    },
+    {
       "id": "brix",
       "path": "datasets/brix"
     },

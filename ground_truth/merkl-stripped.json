@@ -1,0 +1,80 @@
+{
+  "codebaseId": "merkl-stripped",
+  "source": "Code4rena — November 25 to December 1, 2025 (same as merkl, stripped to in-scope files only)",
+  "reportUrl": "ground_truth/reports/merkl.md",
+  "description": "Merkl distribution contracts — stripped to 2 in-scope contracts + 7 dependency files, 604 nSLOC",
+  "findings": [
+    {
+      "id": "M-01",
+      "severity": "medium",
+      "title": "Minimum Reward-Per-Hour Validation Applied to Gross Instead of Net Amount",
+      "rootCause": "distributioncreator::fee-order",
+      "location": "DistributionCreator._createCampaign",
+      "line": 533,
+      "description": "rewardTokenMinAmounts check uses gross newCampaign.amount before _computeFees deducts protocol fees. Campaigns pass the check but actually distribute below minimum rate."
+    },
+    {
+      "id": "M-02",
+      "severity": "medium",
+      "title": "Improper Error Handling of onClaim Callback in _claim Function",
+      "rootCause": "distributor::try-catch-onclaim",
+      "location": "Distributor._claim",
+      "line": 482,
+      "description": "try/catch around IClaimRecipient.onClaim — invalid return reverts inside try (uncaught), genuine external failures silently swallowed by empty catch. Malicious recipient can DOS batch claims."
+    },
+    {
+      "id": "M-03",
+      "severity": "medium",
+      "title": "Multi-step campaign overrides are anchored to the original campaign, making later overrides impossible",
+      "rootCause": "distributioncreator::override-anchor",
+      "location": "DistributionCreator.overrideCampaign",
+      "line": 237,
+      "description": "overrideCampaign validates against original campaignList entry, not the latest campaignOverrides. Second override fails if original start is in the past, even though effective campaign hasn't started."
+    },
+    {
+      "id": "L-01",
+      "severity": "low",
+      "title": "resolveDispute reverts when disputer is blacklisted causing dispute resolution deadlock",
+      "rootCause": "distributor::push-refund-blacklist",
+      "location": "Distributor.resolveDispute",
+      "line": 355,
+      "description": "Push pattern safeTransfer to disputer reverts if disputer is token-blacklisted (e.g. USDC). Governor cannot resolve dispute or revokeTree — system deadlocked."
+    },
+    {
+      "id": "L-02",
+      "severity": "low",
+      "title": "overrideCampaign end timestamp validation uses wrong variable allowing past campaign timestamps",
+      "rootCause": "distributioncreator::override-timestamp-var",
+      "location": "DistributionCreator.overrideCampaign",
+      "line": 244,
+      "description": "End-time check uses _campaign.startTimestamp (original) instead of newCampaign.startTimestamp (new). Allows setting start and end timestamps both in the past."
+    },
+    {
+      "id": "L-03",
+      "severity": "low",
+      "title": "overrideCampaign missing reward rate validation allows bypass of minimum amount restriction",
+      "rootCause": "distributioncreator::override-no-min-rate",
+      "location": "DistributionCreator.overrideCampaign",
+      "line": 236,
+      "description": "Override can change duration without re-checking rewardTokenMinAmounts, allowing dust campaigns that bypass governance-set spam protection."
+    },
+    {
+      "id": "L-04",
+      "severity": "low",
+      "title": "_createCampaign validates minimum rate on gross amount before fee deduction",
+      "rootCause": "distributioncreator::fee-order-net-amount",
+      "location": "DistributionCreator._createCampaign",
+      "line": 533,
+      "description": "Same root cause as M-01 from a different warden's perspective. rewardTokenMinAmounts check at line 533 uses gross amount, then _computeFees deducts fees at line 535, and net amount is stored at line 538. Campaigns pass check but distribute below minimum."
+    },
+    {
+      "id": "L-05",
+      "severity": "low",
+      "title": "getMerkleRoot returns old tree during dispute period allowing claims at stale rates",
+      "rootCause": "distributor::stale-root-dispute",
+      "location": "Distributor.getMerkleRoot",
+      "line": 233,
+      "description": "Returns lastTree.merkleRoot during dispute window. If old tree has inflated rewards, users can front-run correction by claiming at old rates before new tree activates."
+    }
+  ]
+}

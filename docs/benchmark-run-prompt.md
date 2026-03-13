@@ -5,19 +5,18 @@ Copy the block below and set the `CODEBASES` variable to one or more dataset nam
 **Single codebase:** `CODEBASES=merkl`
 **Multiple codebases:** `CODEBASES=canary,nft-dealers,merkl`
 
-Available codebases: `canary`, `nft-dealers`, `merkl`, `brix`, `ekubo`, `megapot`, `panoptic`
+Available codebases: `canary`, `nft-dealers`, `merkl-stripped`, `merkl`, `brix`, `ekubo`, `megapot`, `panoptic`
 
 ---
 
 ```
-CODEBASES=<SET_HERE>
+CODEBASES=merkl-stripped
 RUNS=1
 
 Run a parallel benchmark on the above codebase(s) with all 3 conditions (bare_audit, skill_v1_default, skill_v2), $RUNS run each, 10-minute timeout.
 
 Before running:
-1. Check if each dataset has scope.txt and out_of_scope.txt — show me the in-scope file count per codebase
-2. Build the project
+1. Build the project
 
 Run:
 3. Execute: npm run bench -- --codebases $CODEBASES --conditions bare_audit,skill_v1_default,skill_v2 --runs $RUNS --parallel
