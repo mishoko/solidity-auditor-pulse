@@ -5,7 +5,7 @@
  * Usage:  npm run dashboard
  * Output: dashboard.html (project root)
  *
- * Zero computation — purely renders from the shared data feed.
+ * PURE RENDERER — zero computation. All metrics pre-computed in report-data.ts.
  * Must run `npm run analyze` or `npm run report` first to generate the feed.
  */
 
@@ -14,7 +14,8 @@ import * as path from 'node:path';
 import {
   loadReportData,
   type ReportData,
-  type ConditionAggregate,
+  type CrossCodebaseAggregate,
+  type MetricBests,
 } from '../shared/report-data.js';
 
 // ─── Config ───
@@ -23,110 +24,15 @@ const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const RESULTS_DIR = path.join(ROOT, 'results');
 const OUTPUT_FILE = path.join(ROOT, 'dashboard.html');
 
-/** Column order: leftmost = newest/most visible, rightmost = baseline. */
-const CONDITION_DISPLAY: { id: string; label: string; subtitle: string }[] = [
-  { id: 'skill_v2', label: 'Skill V2', subtitle: '5 agents + FP gate' },
-  { id: 'skill_v1_default', label: 'Skill V1', subtitle: '4 agents (Sonnet)' },
-  // { id: 'skill_v1_deep', label: 'Skill V1 Deep', subtitle: '+ adversarial (Opus)' },
-  { id: 'bare_audit', label: 'Bare CC', subtitle: 'No skill, audit prompt only' },
-];
+/** Condition IDs to show in dashboard (comment out to hide). */
+const VISIBLE_CONDITIONS = new Set([
+  'skill_v2',
+  'skill_v1_default',
+  // 'skill_v1_deep',
+  'bare_audit',
+]);
 
-// ─── Types ───
-
-interface MetricRow {
-  name: string;
-  description: string;
-  values: Map<string, string>;
-  best: Set<string>;
-}
-
-// ─── Aggregate across codebases ───
-
-interface CrossCodebaseAggregate {
-  conditionId: string;
-  avgRecall: number | null;
-  gtTotal: number | null;
-  confirmedNovels: number;
-  fpRate: number | null;
-  consistency: number | null;
-  validRuns: number;
-  avgCost: number | null;
-  avgDurationMs: number | null;
-}
-
-function aggregateAcrossCodebases(data: ReportData): Map<string, CrossCodebaseAggregate> {
-  // Collect all per-codebase aggregates by conditionId
-  const byCondition = new Map<string, ConditionAggregate[]>();
-  for (const cb of data.codebases) {
-    for (const agg of cb.aggregates) {
-      const arr = byCondition.get(agg.conditionId) ?? [];
-      arr.push(agg);
-      byCondition.set(agg.conditionId, arr);
-    }
-  }
-
-  const result = new Map<string, CrossCodebaseAggregate>();
-
-  for (const [conditionId, aggs] of byCondition) {
-    // GT recall: weighted by GT count across codebases that have GT
-    const gtAggs = aggs.filter((a) => a.avgRecall !== null && a.gtTotal !== null);
-    let avgRecall: number | null = null;
-    let gtTotal: number | null = null;
-    if (gtAggs.length > 0) {
-      const totalMatched = gtAggs.reduce((sum, a) => sum + (a.avgMatched ?? 0), 0);
-      const totalGt = gtAggs.reduce((sum, a) => sum + (a.gtTotal ?? 0), 0);
-      avgRecall = totalGt > 0 ? totalMatched / totalGt : null;
-      gtTotal = totalGt;
-    }
-
-    // Confirmed novels: sum across codebases
-    const confirmedNovels = aggs.reduce((sum, a) => sum + a.confirmedNovels, 0);
-
-    // FP rate: total FP / total findings across codebases
-    const totalFp = aggs.reduce((sum, a) => sum + a.totalFp, 0);
-    const totalFindings = aggs.reduce((sum, a) => sum + a.totalFindings, 0);
-    const fpRate = totalFindings > 0 ? totalFp / totalFindings : null;
-
-    // Consistency: average across GT codebases (only those with multi-run data)
-    const consAggs = aggs.filter((a) => a.consistency !== null);
-    const consistency = consAggs.length > 0
-      ? consAggs.reduce((sum, a) => sum + a.consistency!, 0) / consAggs.length
-      : null;
-
-    // Valid runs total
-    const validRuns = aggs.reduce((sum, a) => sum + a.validRuns, 0);
-
-    // Cost: weighted average by valid runs
-    const costAggs = aggs.filter((a) => a.avgCost !== null && a.validRuns > 0);
-    const avgCost = costAggs.length > 0
-      ? costAggs.reduce((sum, a) => sum + a.avgCost! * a.validRuns, 0) /
-        costAggs.reduce((sum, a) => sum + a.validRuns, 0)
-      : null;
-
-    // Duration: weighted average by valid runs
-    const durAggs = aggs.filter((a) => a.avgDurationMs !== null && a.validRuns > 0);
-    const avgDurationMs = durAggs.length > 0
-      ? durAggs.reduce((sum, a) => sum + a.avgDurationMs! * a.validRuns, 0) /
-        durAggs.reduce((sum, a) => sum + a.validRuns, 0)
-      : null;
-
-    result.set(conditionId, {
-      conditionId,
-      avgRecall,
-      gtTotal,
-      confirmedNovels,
-      fpRate,
-      consistency,
-      validRuns,
-      avgCost,
-      avgDurationMs,
-    });
-  }
-
-  return result;
-}
-
-// ─── Metric row building ───
+// ─── Display formatting (no computation — just string conversion) ───
 
 function formatDuration(ms: number): string {
   const sec = Math.round(ms / 1000);
@@ -139,99 +45,83 @@ function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+// ─── Metric rows (pure mapping from pre-computed data) ───
+
+interface MetricRow {
+  name: string;
+  description: string;
+  values: Map<string, string>;
+  bestIds: string[];
+}
+
 function buildMetricRows(
-  metrics: Map<string, CrossCodebaseAggregate>,
-  conditions: typeof CONDITION_DISPLAY,
+  aggregates: CrossCodebaseAggregate[],
+  bests: MetricBests,
   gtTotal: number,
 ): MetricRow[] {
   const rows: MetricRow[] = [];
-  const active = conditions.filter((c) => metrics.has(c.id));
-
-  // Helper: find best (higher is better)
-  function bestHigher(getter: (a: CrossCodebaseAggregate) => number | null): Set<string> {
-    let bestVal = -Infinity;
-    const best = new Set<string>();
-    for (const c of active) {
-      const val = getter(metrics.get(c.id)!);
-      if (val === null) continue;
-      if (val > bestVal) { bestVal = val; best.clear(); best.add(c.id); }
-      else if (val === bestVal) best.add(c.id);
-    }
-    return best;
-  }
-
-  // Helper: find best (lower is better)
-  function bestLower(getter: (a: CrossCodebaseAggregate) => number | null): Set<string> {
-    let bestVal = Infinity;
-    const best = new Set<string>();
-    for (const c of active) {
-      const val = getter(metrics.get(c.id)!);
-      if (val === null) continue;
-      if (val < bestVal) { bestVal = val; best.clear(); best.add(c.id); }
-      else if (val === bestVal) best.add(c.id);
-    }
-    return best;
-  }
 
   // 1. GT Recall
   {
     const values = new Map<string, string>();
-    for (const c of active) {
-      const m = metrics.get(c.id)!;
-      values.set(c.id, m.avgRecall !== null ? formatPercent(m.avgRecall) : '\u2014');
+    for (const a of aggregates) {
+      values.set(a.conditionId, a.avgRecall !== null ? formatPercent(a.avgRecall) : '\u2014');
     }
-    rows.push({ name: 'GT Recall', description: `Known bugs found (${gtTotal} in GT)`, values, best: bestHigher((a) => a.avgRecall) });
+    rows.push({ name: 'GT Recall', description: `Known bugs found (${gtTotal} in GT)`, values, bestIds: bests.recall });
   }
 
-  // 2. Confirmed Novel Bugs
+  // 2. Confirmed Novel Findings (filtered)
   {
     const values = new Map<string, string>();
-    for (const c of active) values.set(c.id, String(metrics.get(c.id)!.confirmedNovels));
-    rows.push({ name: 'Confirmed Novel Findings', description: 'Opus-validated across all codebases', values, best: bestHigher((a) => a.confirmedNovels) });
+    for (const a of aggregates) values.set(a.conditionId, String(a.confirmedNovelsFiltered));
+    rows.push({ name: 'Confirmed Novel Findings', description: 'Opus-validated, excludes centralization & informational', values, bestIds: bests.confirmedNovelsFiltered });
+  }
+
+  // 2b. Conditional Novel Findings (plausible, filtered)
+  {
+    const values = new Map<string, string>();
+    for (const a of aggregates) values.set(a.conditionId, String(a.plausibleNovelsFiltered));
+    rows.push({ name: 'Conditional Novel Findings', description: 'Plausible, exploitation depends on assumptions or edge-cases', values, bestIds: bests.confirmedNovelsFiltered });
   }
 
   // 3. FP Rate
   {
     const values = new Map<string, string>();
-    for (const c of active) {
-      const m = metrics.get(c.id)!;
-      values.set(c.id, m.fpRate !== null ? formatPercent(m.fpRate) : '\u2014');
+    for (const a of aggregates) {
+      values.set(a.conditionId, a.fpRate !== null ? formatPercent(a.fpRate) : '\u2014');
     }
-    rows.push({ name: 'False Positive Rate', description: 'FP \u00F7 total findings (lower is better)', values, best: bestLower((a) => a.fpRate) });
+    rows.push({ name: 'False Positive Rate', description: 'FP \u00F7 total findings (lower is better)', values, bestIds: bests.fpRate });
   }
 
   // 4. Consistency
   {
     const values = new Map<string, string>();
-    for (const c of active) {
-      const m = metrics.get(c.id)!;
-      if (m.consistency !== null && m.validRuns >= 2) {
-        values.set(c.id, m.consistency.toFixed(2));
+    for (const a of aggregates) {
+      if (a.consistency !== null && a.validRuns >= 2) {
+        values.set(a.conditionId, a.consistency.toFixed(2));
       } else {
-        values.set(c.id, m.validRuns < 2 ? '1 run' : '\u2014');
+        values.set(a.conditionId, a.validRuns < 2 ? '1 run' : '\u2014');
       }
     }
-    rows.push({ name: 'Consistency across runs', description: 'Cross-run GT agreement (Jaccard)', values, best: bestHigher((a) => a.consistency) });
+    rows.push({ name: 'Consistency', description: 'Cross-run GT agreement (Jaccard)', values, bestIds: bests.consistency });
   }
 
   // 5. Avg Cost
   {
     const values = new Map<string, string>();
-    for (const c of active) {
-      const m = metrics.get(c.id)!;
-      values.set(c.id, m.avgCost !== null ? `$${m.avgCost.toFixed(2)}` : '\u2014');
+    for (const a of aggregates) {
+      values.set(a.conditionId, a.avgCost !== null ? `$${a.avgCost.toFixed(2)}` : '\u2014');
     }
-    rows.push({ name: 'Avg Cost / Run', description: 'Claude API usage per run', values, best: bestLower((a) => a.avgCost) });
+    rows.push({ name: 'Avg Cost / Run', description: 'Claude API usage per run', values, bestIds: bests.avgCost });
   }
 
   // 6. Avg Duration
   {
     const values = new Map<string, string>();
-    for (const c of active) {
-      const m = metrics.get(c.id)!;
-      values.set(c.id, m.avgDurationMs !== null ? formatDuration(m.avgDurationMs) : '\u2014');
+    for (const a of aggregates) {
+      values.set(a.conditionId, a.avgDurationMs !== null ? formatDuration(a.avgDurationMs) : '\u2014');
     }
-    rows.push({ name: 'Avg Duration', description: 'Wall clock per run', values, best: bestLower((a) => a.avgDurationMs) });
+    rows.push({ name: 'Avg Duration', description: 'Wall clock per run', values, bestIds: bests.avgDuration });
   }
 
   return rows;
@@ -245,21 +135,15 @@ function escapeHTML(s: string): string {
 
 function renderHTML(
   rows: MetricRow[],
-  conditions: typeof CONDITION_DISPLAY,
+  aggregates: CrossCodebaseAggregate[],
   data: ReportData,
-  metrics: Map<string, CrossCodebaseAggregate>,
 ): string {
-  const active = conditions.filter((c) =>
-    rows.some((r) => r.values.has(c.id) && r.values.get(c.id) !== '\u2014'),
-  );
-
-  const headerCells = active
-    .map((c, i) => {
-      const m = metrics.get(c.id);
-      const runCount = m ? `${m.validRuns} run${m.validRuns !== 1 ? 's' : ''}` : '';
+  const headerCells = aggregates
+    .map((a, i) => {
+      const runCount = `${a.validRuns} run${a.validRuns !== 1 ? 's' : ''}`;
       return `      <th${i === 0 ? ' class="highlight"' : ''}>
-        <span class="model-name">${escapeHTML(c.label)}</span>
-        <span class="model-sub">${escapeHTML(c.subtitle)}</span>
+        <span class="model-name">${escapeHTML(a.label)}</span>
+        <span class="model-sub">${escapeHTML(a.subtitle)}</span>
         <span class="model-sub">${escapeHTML(runCount)}</span>
       </th>`;
     })
@@ -267,10 +151,11 @@ function renderHTML(
 
   const dataRows = rows
     .map((row) => {
-      const cells = active
-        .map((c, i) => {
-          const val = row.values.get(c.id) ?? '\u2014';
-          const isBest = row.best.has(c.id);
+      const bestSet = new Set(row.bestIds);
+      const cells = aggregates
+        .map((a, i) => {
+          const val = row.values.get(a.conditionId) ?? '\u2014';
+          const isBest = bestSet.has(a.conditionId);
           const isDash = val === '\u2014' || val === '1 run';
           const classes: string[] = [];
           if (i === 0) classes.push('highlight');
@@ -298,7 +183,7 @@ ${cells}
     data.gtTotalAll > 0
       ? `
   <div class="callout">
-    <strong>${Math.round((data.gtMissedByAllTotal / data.gtTotalAll) * 100)}% of known vulnerabilities (${data.gtMissedByAllTotal}/${data.gtTotalAll}) were missed by all approaches.</strong>
+    <strong>${data.gtMissedByAllPercent}% of known vulnerabilities (${data.gtMissedByAllTotal}/${data.gtTotalAll}) were missed by all approaches.</strong>
     The primary gap is not between tools &mdash; it&rsquo;s between current LLM auditing and the bugs that matter.
   </div>`
       : '';
@@ -308,7 +193,7 @@ ${cells}
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Solidity Auditor Benchmark</title>
+<title>Skills Auditor Benchmark</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -379,7 +264,8 @@ ${missedCallout}
 
   <div class="footnotes">
     <p>GT/Official Findings recall measured against ${data.gtTotalAll} findings from official C4 audit reports (codebases with ground truth only).</p>
-    <p>INVALID runs excluded (skill runs with 0 findings). Novel (out of GT) findings validated by Claude Opus against scoped source code.</p>
+    <p>INVALID runs excluded (skill runs with 0 findings). Novel bugs validated by Claude Opus against scoped source code.</p>
+    <p>Confirmed novel findings exclude centralization-risk and informational categories (${data.totalExcludedByRiskCategory} finding${data.totalExcludedByRiskCategory !== 1 ? 's' : ''} excluded).</p>
     <p>Consistency = Jaccard similarity of matched GT IDs across runs. &ldquo;1 run&rdquo; = single run, consistency undefined.</p>
     <p>Cost = Claude API usage as reported by CLI. Duration = wall clock including agent orchestration.</p>
   </div>
@@ -392,7 +278,7 @@ ${missedCallout}
 // ─── Main ───
 
 function main(): void {
-  // Parse --codebases filter (comma-separated or repeated)
+  // Parse --codebases filter
   const args = process.argv.slice(2);
   const codebaseFilter = new Set<string>();
   for (let i = 0; i < args.length; i++) {
@@ -402,33 +288,114 @@ function main(): void {
     }
   }
 
-  let data = loadReportData(RESULTS_DIR);
+  const data = loadReportData(RESULTS_DIR);
   if (!data) {
     console.error('No report-data.json found. Run `npm run report` or `npm run analyze` first.');
     process.exit(1);
   }
 
-  // Filter codebases if requested
+  // Filter aggregates by visible conditions and optional codebase filter
+  let aggregates = data.crossCodebaseAggregates.filter((a) => VISIBLE_CONDITIONS.has(a.conditionId));
+
+  // If codebase filter is active, recompute is NOT needed — the aggregates
+  // are pre-computed across all codebases. For codebase-specific view,
+  // we read per-codebase aggregates directly.
+  let displayData = data;
   if (codebaseFilter.size > 0) {
-    data = {
+    // Use per-codebase aggregates for filtered view
+    const filteredCbs = data.codebases.filter((cb) => codebaseFilter.has(cb.codebaseId));
+    const conditionIds = [...new Set(filteredCbs.flatMap((cb) => cb.conditions))];
+
+    aggregates = conditionIds
+      .filter((id) => VISIBLE_CONDITIONS.has(id))
+      .map((condId) => {
+        const perCb = filteredCbs
+          .map((cb) => cb.aggregates.find((a) => a.conditionId === condId))
+          .filter((a): a is (typeof a & {}) => a !== undefined);
+
+        // Find the full aggregate to get label/subtitle
+        const base = data.crossCodebaseAggregates.find((a) => a.conditionId === condId);
+
+        return {
+          conditionId: condId,
+          label: base?.label ?? condId,
+          subtitle: base?.subtitle ?? '',
+          validRuns: perCb.reduce((s, a) => s + a.validRuns, 0),
+          avgRecall: (() => {
+            const gt = perCb.filter((a) => a.avgRecall !== null && a.gtTotal !== null);
+            if (gt.length === 0) return null;
+            const m = gt.reduce((s, a) => s + (a.avgMatched ?? 0), 0);
+            const t = gt.reduce((s, a) => s + (a.gtTotal ?? 0), 0);
+            return t > 0 ? m / t : null;
+          })(),
+          gtTotal: perCb.reduce((s, a) => s + (a.gtTotal ?? 0), 0) || null,
+          confirmedNovels: perCb.reduce((s, a) => s + a.confirmedNovels, 0),
+          confirmedNovelsFiltered: perCb.reduce((s, a) => s + a.confirmedNovelsFiltered, 0),
+          plausibleNovelsFiltered: perCb.reduce((s, a) => s + a.plausibleNovelsFiltered, 0),
+          fpRate: (() => {
+            const tf = perCb.reduce((s, a) => s + a.totalFindings, 0);
+            return tf > 0 ? perCb.reduce((s, a) => s + a.totalFp, 0) / tf : null;
+          })(),
+          consistency: (() => {
+            const c = perCb.filter((a) => a.consistency !== null);
+            return c.length > 0 ? c.reduce((s, a) => s + a.consistency!, 0) / c.length : null;
+          })(),
+          avgCost: (() => {
+            const c = perCb.filter((a) => a.avgCost !== null && a.validRuns > 0);
+            if (c.length === 0) return null;
+            return c.reduce((s, a) => s + a.avgCost! * a.validRuns, 0) / c.reduce((s, a) => s + a.validRuns, 0);
+          })(),
+          avgDurationMs: (() => {
+            const d = perCb.filter((a) => a.avgDurationMs !== null && a.validRuns > 0);
+            if (d.length === 0) return null;
+            return d.reduce((s, a) => s + a.avgDurationMs! * a.validRuns, 0) / d.reduce((s, a) => s + a.validRuns, 0);
+          })(),
+        };
+      });
+
+    displayData = {
       ...data,
-      codebaseIds: data.codebaseIds.filter((id) => codebaseFilter.has(id)),
-      codebases: data.codebases.filter((cb) => codebaseFilter.has(cb.codebaseId)),
-      gtMissedByAllTotal: data.codebases
-        .filter((cb) => codebaseFilter.has(cb.codebaseId))
-        .reduce((sum, cb) => sum + cb.missedGt.length, 0),
-      gtTotalAll: data.codebases
-        .filter((cb) => codebaseFilter.has(cb.codebaseId))
-        .reduce((sum, cb) => sum + cb.gtTotal, 0),
+      codebaseIds: [...codebaseFilter],
+      gtTotalAll: filteredCbs.reduce((s, cb) => s + cb.gtTotal, 0),
+      gtMissedByAllTotal: filteredCbs.reduce((s, cb) => s + cb.missedGt.length, 0),
+      gtMissedByAllPercent: (() => {
+        const t = filteredCbs.reduce((s, cb) => s + cb.gtTotal, 0);
+        const m = filteredCbs.reduce((s, cb) => s + cb.missedGt.length, 0);
+        return t > 0 ? Math.round((m / t) * 100) : 0;
+      })(),
     };
   }
 
-  console.log(`Reading report data (${data.codebases.reduce((s, cb) => s + cb.runs.length, 0)} runs, codebases: ${data.codebaseIds.join(', ')})`);
+  // Filter out conditions with no data
+  aggregates = aggregates.filter((a) => a.validRuns > 0 || a.avgRecall !== null);
 
-  const metrics = aggregateAcrossCodebases(data);
-  const active = CONDITION_DISPLAY.filter((c) => metrics.has(c.id));
-  const rows = buildMetricRows(metrics, active, data.gtTotalAll);
-  const html = renderHTML(rows, active, data, metrics);
+  console.log(`Reading report data (${aggregates.reduce((s, a) => s + a.validRuns, 0)} runs, codebases: ${displayData.codebaseIds.join(', ')})`);
+
+  // Compute bests for the filtered set
+  function bestH(getter: (a: CrossCodebaseAggregate) => number | null): string[] {
+    let bv = -Infinity; let b: string[] = [];
+    for (const a of aggregates) { const v = getter(a); if (v === null) continue; if (v > bv) { bv = v; b = [a.conditionId]; } else if (v === bv) b.push(a.conditionId); }
+    return b;
+  }
+  function bestL(getter: (a: CrossCodebaseAggregate) => number | null): string[] {
+    let bv = Infinity; let b: string[] = [];
+    for (const a of aggregates) { const v = getter(a); if (v === null) continue; if (v < bv) { bv = v; b = [a.conditionId]; } else if (v === bv) b.push(a.conditionId); }
+    return b;
+  }
+
+  const bests: MetricBests = codebaseFilter.size > 0
+    ? {
+        recall: bestH((a) => a.avgRecall),
+        confirmedNovelsFiltered: bestH((a) => a.confirmedNovelsFiltered),
+        fpRate: bestL((a) => a.fpRate),
+        consistency: bestH((a) => a.consistency),
+        avgCost: bestL((a) => a.avgCost),
+        avgDuration: bestL((a) => a.avgDurationMs),
+      }
+    : data.metricBests;
+
+  const rows = buildMetricRows(aggregates, bests, displayData.gtTotalAll);
+  const html = renderHTML(rows, aggregates, displayData);
 
   fs.writeFileSync(OUTPUT_FILE, html, 'utf8');
   console.log(`Dashboard written to ${OUTPUT_FILE}`);

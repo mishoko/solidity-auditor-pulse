@@ -151,6 +151,8 @@ export interface ClusterResult {
 
 // ─── Cluster Validation ───
 
+export type RiskCategory = 'centralization-risk' | 'informational';
+
 export interface ClusterValidation {
   clusterId: string;
   title: string;
@@ -158,6 +160,8 @@ export interface ClusterValidation {
   severity: 'critical' | 'high' | 'medium' | 'low';
   reasoning: string;
   codeEvidence?: string;
+  /** Risk category for filtering. Absent = real vulnerability (default). */
+  riskCategory?: RiskCategory;
 }
 
 export interface ValidationResult {

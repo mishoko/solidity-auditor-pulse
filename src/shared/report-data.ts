@@ -59,12 +59,17 @@ export interface ConditionAggregate {
   // Findings
   avgFindingsCount: number | null;
   totalFp: number;
+  avgFp: number | null;
   totalFindings: number;
   fpRate: number | null;
   avgUncertain: number | null;
   // Novel findings from validation
   confirmedNovels: number;
+  /** Confirmed novels excluding centralization-risk and informational. */
+  confirmedNovelsFiltered: number;
   plausibleNovels: number;
+  /** Plausible novels excluding centralization-risk and informational. */
+  plausibleNovelsFiltered: number;
   uniqueBugsFound: number;
   // Cost & duration
   avgCost: number | null;
@@ -95,6 +100,7 @@ export interface ValidationEntry {
   severity: string;
   codeEvidence: string;
   reasoning: string;
+  riskCategory?: 'centralization-risk' | 'informational';
 }
 
 /** Per-GT-finding consistency detail across runs. */
@@ -139,6 +145,33 @@ export interface CodebaseData {
   consistency: ConsistencyEntry[];
 }
 
+/** Cross-codebase aggregate for dashboard display. */
+export interface CrossCodebaseAggregate {
+  conditionId: string;
+  label: string;
+  subtitle: string;
+  validRuns: number;
+  avgRecall: number | null;
+  gtTotal: number | null;
+  confirmedNovels: number;
+  confirmedNovelsFiltered: number;
+  plausibleNovelsFiltered: number;
+  fpRate: number | null;
+  consistency: number | null;
+  avgCost: number | null;
+  avgDurationMs: number | null;
+}
+
+/** Per-metric best condition IDs (for highlighting in renderers). */
+export interface MetricBests {
+  recall: string[];
+  confirmedNovelsFiltered: string[];
+  fpRate: string[];
+  consistency: string[];
+  avgCost: string[];
+  avgDuration: string[];
+}
+
 /** Top-level report data — the shared feed. */
 export interface ReportData {
   generatedAt: string;
@@ -151,25 +184,36 @@ export interface ReportData {
   /** Overall GT missed by all across all codebases. */
   gtMissedByAllTotal: number;
   gtTotalAll: number;
+  gtMissedByAllPercent: number;
+  /** Cross-codebase aggregates for dashboard. */
+  crossCodebaseAggregates: CrossCodebaseAggregate[];
+  /** Total confirmed novels excluded by risk category filtering (across all conditions). */
+  totalExcludedByRiskCategory: number;
+  /** Per-metric best condition IDs. */
+  metricBests: MetricBests;
   /** Integrity violations. */
   integrityViolations: string[];
 }
 
 // ─── Constants ───
 
-const CONDITION_ORDER: [string, string][] = [
-  ['skill_v2', 'V2'],
-  ['skill_v1_default', 'V1'],
-  ['skill_v1_deep', 'V1 Deep'],
-  ['bare_audit', 'Bare CC'],
+const CONDITION_ORDER: { id: string; label: string; subtitle: string }[] = [
+  { id: 'skill_v2', label: 'V2', subtitle: '5 agents + FP gate' },
+  { id: 'skill_v1_default', label: 'V1', subtitle: '4 agents (Sonnet)' },
+  { id: 'skill_v1_deep', label: 'V1 Deep', subtitle: '+ adversarial (Opus)' },
+  { id: 'bare_audit', label: 'Bare CC', subtitle: 'No skill, audit prompt only' },
 ];
 
 function conditionLabel(id: string): string {
-  return CONDITION_ORDER.find(([k]) => k === id)?.[1] ?? id;
+  return CONDITION_ORDER.find((c) => c.id === id)?.label ?? id;
+}
+
+function conditionSubtitle(id: string): string {
+  return CONDITION_ORDER.find((c) => c.id === id)?.subtitle ?? '';
 }
 
 function conditionSortIndex(id: string): number {
-  const idx = CONDITION_ORDER.findIndex(([k]) => k === id);
+  const idx = CONDITION_ORDER.findIndex((c) => c.id === id);
   return idx >= 0 ? idx : 999;
 }
 
@@ -432,18 +476,27 @@ export function computeReportData(
         }
       }
       const fpRate = totalFindings > 0 ? totalFp / totalFindings : null;
+      const avgFp = validRuns.length > 0 ? totalFp / validRuns.length : null;
 
       // Novel findings from validation
       let confirmedNovels = 0;
+      let confirmedNovelsFiltered = 0;
       let plausibleNovels = 0;
+      let plausibleNovelsFiltered = 0;
       let uniqueBugsFound = 0;
       if (clusters && validationsData) {
         for (const cluster of clusters.clusters) {
           if (!cluster.conditionsCaught.includes(condId)) continue;
           uniqueBugsFound++;
           const val = validationsData.validations.find((v) => v.clusterId === cluster.clusterId);
-          if (val?.verdict === 'confirmed') confirmedNovels++;
-          if (val?.verdict === 'plausible') plausibleNovels++;
+          if (val?.verdict === 'confirmed') {
+            confirmedNovels++;
+            if (!val.riskCategory) confirmedNovelsFiltered++;
+          }
+          if (val?.verdict === 'plausible') {
+            plausibleNovels++;
+            if (!val.riskCategory) plausibleNovelsFiltered++;
+          }
         }
       } else if (clusters) {
         for (const cluster of clusters.clusters) {
@@ -475,11 +528,14 @@ export function computeReportData(
         consistency,
         avgFindingsCount: avgFindings,
         totalFp,
+        avgFp,
         totalFindings,
         fpRate,
         avgUncertain,
         confirmedNovels,
+        confirmedNovelsFiltered,
         plausibleNovels,
+        plausibleNovelsFiltered,
         uniqueBugsFound,
         avgCost: costs.length > 0 ? costs.reduce((a, b) => a + b, 0) / costs.length : null,
         avgDurationMs: durations.length > 0 ? durations.reduce((a, b) => a + b, 0) / durations.length : null,
@@ -611,6 +667,7 @@ export function computeReportData(
       severity: v.severity,
       codeEvidence: v.codeEvidence ?? '-',
       reasoning: v.reasoning,
+      riskCategory: v.riskCategory,
     })) ?? [];
 
     // Findings matrix (GT codebases only)
@@ -729,6 +786,106 @@ export function computeReportData(
     }
   }
 
+  // ── Cross-codebase aggregates (for dashboard) ──
+
+  const allConditionIds = [...new Set(codebases.flatMap((cb) => cb.conditions))];
+  const crossAggregates: CrossCodebaseAggregate[] = allConditionIds
+    .sort((a, b) => conditionSortIndex(a) - conditionSortIndex(b))
+    .map((condId) => {
+      const perCb = codebases
+        .map((cb) => cb.aggregates.find((a) => a.conditionId === condId))
+        .filter((a): a is ConditionAggregate => a !== undefined);
+
+      // Weighted recall across GT codebases
+      const gtAggs = perCb.filter((a) => a.avgRecall !== null && a.gtTotal !== null);
+      let avgRecall: number | null = null;
+      let crossGtTotal: number | null = null;
+      if (gtAggs.length > 0) {
+        const totalMatched = gtAggs.reduce((sum, a) => sum + (a.avgMatched ?? 0), 0);
+        const totalGt = gtAggs.reduce((sum, a) => sum + (a.gtTotal ?? 0), 0);
+        avgRecall = totalGt > 0 ? totalMatched / totalGt : null;
+        crossGtTotal = totalGt;
+      }
+
+      const confirmedNovels = perCb.reduce((sum, a) => sum + a.confirmedNovels, 0);
+      const confirmedNovelsFiltered = perCb.reduce((sum, a) => sum + a.confirmedNovelsFiltered, 0);
+      const plausibleNovelsFiltered = perCb.reduce((sum, a) => sum + a.plausibleNovelsFiltered, 0);
+
+      const totalFp = perCb.reduce((sum, a) => sum + a.totalFp, 0);
+      const totalFindings = perCb.reduce((sum, a) => sum + a.totalFindings, 0);
+      const fpRate = totalFindings > 0 ? totalFp / totalFindings : null;
+
+      const consAggs = perCb.filter((a) => a.consistency !== null);
+      const consistency = consAggs.length > 0
+        ? consAggs.reduce((sum, a) => sum + a.consistency!, 0) / consAggs.length
+        : null;
+
+      const validRuns = perCb.reduce((sum, a) => sum + a.validRuns, 0);
+
+      const costAggs = perCb.filter((a) => a.avgCost !== null && a.validRuns > 0);
+      const avgCost = costAggs.length > 0
+        ? costAggs.reduce((sum, a) => sum + a.avgCost! * a.validRuns, 0) /
+          costAggs.reduce((sum, a) => sum + a.validRuns, 0)
+        : null;
+
+      const durAggs = perCb.filter((a) => a.avgDurationMs !== null && a.validRuns > 0);
+      const avgDurationMs = durAggs.length > 0
+        ? durAggs.reduce((sum, a) => sum + a.avgDurationMs! * a.validRuns, 0) /
+          durAggs.reduce((sum, a) => sum + a.validRuns, 0)
+        : null;
+
+      return {
+        conditionId: condId,
+        label: conditionLabel(condId),
+        subtitle: conditionSubtitle(condId),
+        validRuns,
+        avgRecall,
+        gtTotal: crossGtTotal,
+        confirmedNovels,
+        confirmedNovelsFiltered,
+        plausibleNovelsFiltered,
+        fpRate,
+        consistency,
+        avgCost,
+        avgDurationMs,
+      };
+    });
+
+  // ── Per-metric best condition IDs ──
+
+  function bestHigher(getter: (a: CrossCodebaseAggregate) => number | null): string[] {
+    let bestVal = -Infinity;
+    let best: string[] = [];
+    for (const a of crossAggregates) {
+      const val = getter(a);
+      if (val === null) continue;
+      if (val > bestVal) { bestVal = val; best = [a.conditionId]; }
+      else if (val === bestVal) best.push(a.conditionId);
+    }
+    return best;
+  }
+
+  function bestLower(getter: (a: CrossCodebaseAggregate) => number | null): string[] {
+    let bestVal = Infinity;
+    let best: string[] = [];
+    for (const a of crossAggregates) {
+      const val = getter(a);
+      if (val === null) continue;
+      if (val < bestVal) { bestVal = val; best = [a.conditionId]; }
+      else if (val === bestVal) best.push(a.conditionId);
+    }
+    return best;
+  }
+
+  const metricBests: MetricBests = {
+    recall: bestHigher((a) => a.avgRecall),
+    confirmedNovelsFiltered: bestHigher((a) => a.confirmedNovelsFiltered),
+    fpRate: bestLower((a) => a.fpRate),
+    consistency: bestHigher((a) => a.consistency),
+    avgCost: bestLower((a) => a.avgCost),
+    avgDuration: bestLower((a) => a.avgDurationMs),
+  };
+
   return {
     generatedAt: new Date().toISOString(),
     mode: options.latest ? 'latest' : 'all',
@@ -739,6 +896,13 @@ export function computeReportData(
     codebases,
     gtMissedByAllTotal,
     gtTotalAll,
+    gtMissedByAllPercent: gtTotalAll > 0 ? Math.round((gtMissedByAllTotal / gtTotalAll) * 100) : 0,
+    crossCodebaseAggregates: crossAggregates,
+    totalExcludedByRiskCategory: codebases.reduce((sum, cb) =>
+      sum + cb.validations.filter((v) =>
+        v.riskCategory && (v.verdict === 'confirmed' || v.verdict === 'plausible'),
+      ).length, 0),
+    metricBests,
     integrityViolations,
   };
 }

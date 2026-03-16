@@ -88,11 +88,19 @@ function generateComparisonTable(data: ReportData): string[] {
 
     // Novel confirmed / plausible
     if (cb.validationSummary) {
-      const confirmedCells = cb.aggregates.map((a) => String(a.confirmedNovels));
+      const confirmedCells = cb.aggregates.map((a) => String(a.confirmedNovelsFiltered));
+      const hasFiltered = cb.aggregates.some((a) => a.confirmedNovels !== a.confirmedNovelsFiltered);
       lines.push(`| Novel confirmed | ${confirmedCells.join(' | ')} |`);
+      if (hasFiltered) {
+        const unfilteredCells = cb.aggregates.map((a) => {
+          const excluded = a.confirmedNovels - a.confirmedNovelsFiltered;
+          return excluded > 0 ? `+${excluded} excluded` : '-';
+        });
+        lines.push(`| ↳ centralization/informational | ${unfilteredCells.join(' | ')} |`);
+      }
 
-      const plausibleCells = cb.aggregates.map((a) => String(a.plausibleNovels));
-      lines.push(`| Novel plausible | ${plausibleCells.join(' | ')} |`);
+      const conditionalCells = cb.aggregates.map((a) => String(a.plausibleNovelsFiltered));
+      lines.push(`| Conditional novel | ${conditionalCells.join(' | ')} |`);
     }
 
     // Total findings
@@ -112,9 +120,8 @@ function generateComparisonTable(data: ReportData): string[] {
     // FP / Uncertain
     if (cb.hasGt) {
       const fpCells = cb.aggregates.map((a) => {
-        if (a.validRuns === 0) return '-';
-        const avgFp = a.totalFp / a.validRuns;
-        return String(Math.round(avgFp));
+        if (a.avgFp === null) return '-';
+        return String(Math.round(a.avgFp));
       });
       lines.push(`| False positives | ${fpCells.join(' | ')} |`);
 

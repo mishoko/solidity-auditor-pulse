@@ -36,6 +36,7 @@ const ValidationResponseSchema = z.object({
   severity: z.enum(['critical', 'high', 'medium', 'low']),
   reasoning: z.string(),
   codeEvidence: z.string().optional(),
+  riskCategory: z.enum(['centralization-risk', 'informational']).nullable().optional(),
 });
 
 // ─── Options ───
@@ -193,12 +194,18 @@ Reassess severity based on YOUR analysis:
 - medium: conditional fund loss, limited DoS, or minor access control issue
 - low: edge case, gas issue, or requires highly unlikely preconditions
 
+RISK CATEGORY (for confirmed/plausible only):
+- "centralization-risk" — the finding depends on a trusted admin/governor/owner acting maliciously or being compromised. Not exploitable by an external attacker.
+- "informational" — code quality issue, gas optimization, best practice violation, or edge case with no realistic exploit path.
+- null — real vulnerability exploitable without privileged access.
+
 Respond with ONLY this JSON:
 {
   "verdict": "confirmed" | "plausible" | "rejected",
   "severity": "critical" | "high" | "medium" | "low",
   "reasoning": "<3-5 sentences: what you found, exploit path or why there isn't one, severity justification>",
-  "codeEvidence": "<specific function name and key lines supporting your verdict>"
+  "codeEvidence": "<specific function name and key lines supporting your verdict>",
+  "riskCategory": "centralization-risk" | "informational" | null
 }`;
 }
 
@@ -280,6 +287,7 @@ export async function validateClusters(
           clusterId: cluster.clusterId,
           title: cluster.title,
           ...response,
+          riskCategory: response.riskCategory ?? undefined,
         };
       } catch (err) {
         const msg = err instanceof LLMError ? err.message : String(err);

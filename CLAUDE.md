@@ -173,6 +173,8 @@ The analysis pipeline (`npm run analyze`) runs 3 steps:
 - Per cluster: Opus examines **scoped** source code (only files referenced by finding locations)
 - Falls back to scope.txt, then all .sol files
 - Three verdicts: confirmed, plausible, rejected
+- Risk categorization: each confirmed/plausible finding tagged with `riskCategory` (`centralization-risk`, `informational`, or absent for real vulnerabilities)
+- Dashboard and report can filter by risk category — data is preserved, display is filtered
 
 ### Report
 - Management comparison table (one column per condition)

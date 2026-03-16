@@ -337,6 +337,16 @@ Source code scoping strategy (`validate.ts:85-155`):
 
 On failure: defaults to `plausible` (not rejected — conservative for security context).
 
+Opus also assigns a `riskCategory` for confirmed/plausible findings:
+
+| Category | Meaning | Dashboard default |
+|----------|---------|-------------------|
+| `centralization-risk` | Depends on trusted admin/governor acting maliciously. Not exploitable by external attacker. | Hidden |
+| `informational` | Code quality, gas optimization, best practice violation, no realistic exploit path. | Hidden |
+| *(absent)* | Real vulnerability exploitable without privileged access. | Shown |
+
+This enables post-validation filtering without losing data — the finding stays in the validation output, renderers decide what to show.
+
 ### LLM calls
 
 | Metric | Value |
@@ -365,7 +375,8 @@ On failure: defaults to `plausible` (not rejected — conservative for security 
       severity: "high",
       reasoning: "recoverFees: tokens[i].safeTransfer(to, ...) sends
                   full balance including user deposits...",
-      codeEvidence: "DistributionCreator.recoverFees L612"
+      codeEvidence: "DistributionCreator.recoverFees L612",
+      riskCategory: "centralization-risk"  // or "informational" or absent
     },
     ...
   ]
