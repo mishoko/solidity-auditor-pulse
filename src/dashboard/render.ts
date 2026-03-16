@@ -27,7 +27,7 @@ const OUTPUT_FILE = path.join(ROOT, 'dashboard.html');
 const CONDITION_DISPLAY: { id: string; label: string; subtitle: string }[] = [
   { id: 'skill_v2', label: 'Skill V2', subtitle: '5 agents + FP gate' },
   { id: 'skill_v1_default', label: 'Skill V1', subtitle: '4 agents (Sonnet)' },
-  { id: 'skill_v1_deep', label: 'Skill V1 Deep', subtitle: '+ adversarial (Opus)' },
+  // { id: 'skill_v1_deep', label: 'Skill V1 Deep', subtitle: '+ adversarial (Opus)' },
   { id: 'bare_audit', label: 'Bare CC', subtitle: 'No skill, audit prompt only' },
 ];
 
@@ -187,7 +187,7 @@ function buildMetricRows(
   {
     const values = new Map<string, string>();
     for (const c of active) values.set(c.id, String(metrics.get(c.id)!.confirmedNovels));
-    rows.push({ name: 'Confirmed Novel Bugs', description: 'Opus-validated across all codebases', values, best: bestHigher((a) => a.confirmedNovels) });
+    rows.push({ name: 'Confirmed Novel Findings', description: 'Opus-validated across all codebases', values, best: bestHigher((a) => a.confirmedNovels) });
   }
 
   // 3. FP Rate
@@ -211,7 +211,7 @@ function buildMetricRows(
         values.set(c.id, m.validRuns < 2 ? '1 run' : '\u2014');
       }
     }
-    rows.push({ name: 'Consistency', description: 'Cross-run GT agreement (Jaccard)', values, best: bestHigher((a) => a.consistency) });
+    rows.push({ name: 'Consistency across runs', description: 'Cross-run GT agreement (Jaccard)', values, best: bestHigher((a) => a.consistency) });
   }
 
   // 5. Avg Cost
@@ -247,19 +247,22 @@ function renderHTML(
   rows: MetricRow[],
   conditions: typeof CONDITION_DISPLAY,
   data: ReportData,
+  metrics: Map<string, CrossCodebaseAggregate>,
 ): string {
   const active = conditions.filter((c) =>
     rows.some((r) => r.values.has(c.id) && r.values.get(c.id) !== '\u2014'),
   );
 
   const headerCells = active
-    .map(
-      (c, i) =>
-        `      <th${i === 0 ? ' class="highlight"' : ''}>
+    .map((c, i) => {
+      const m = metrics.get(c.id);
+      const runCount = m ? `${m.validRuns} run${m.validRuns !== 1 ? 's' : ''}` : '';
+      return `      <th${i === 0 ? ' class="highlight"' : ''}>
         <span class="model-name">${escapeHTML(c.label)}</span>
         <span class="model-sub">${escapeHTML(c.subtitle)}</span>
-      </th>`,
-    )
+        <span class="model-sub">${escapeHTML(runCount)}</span>
+      </th>`;
+    })
     .join('\n');
 
   const dataRows = rows
@@ -357,7 +360,7 @@ ${cells}
 <div class="container">
 
   <div class="header">
-    <h1>Solidity Auditor Benchmark</h1>
+    <h1>Skills Auditor Benchmark</h1>
     <span class="subtitle">${escapeHTML(codebaseList)} &middot; ${dateStr}</span>
   </div>
 
@@ -375,8 +378,8 @@ ${dataRows}
 ${missedCallout}
 
   <div class="footnotes">
-    <p>GT recall measured against ${data.gtTotalAll} findings from official C4 audit reports (codebases with ground truth only).</p>
-    <p>INVALID runs excluded (skill runs with 0 findings). Novel bugs validated by Claude Opus against scoped source code.</p>
+    <p>GT/Official Findings recall measured against ${data.gtTotalAll} findings from official C4 audit reports (codebases with ground truth only).</p>
+    <p>INVALID runs excluded (skill runs with 0 findings). Novel (out of GT) findings validated by Claude Opus against scoped source code.</p>
     <p>Consistency = Jaccard similarity of matched GT IDs across runs. &ldquo;1 run&rdquo; = single run, consistency undefined.</p>
     <p>Cost = Claude API usage as reported by CLI. Duration = wall clock including agent orchestration.</p>
   </div>
@@ -389,18 +392,43 @@ ${missedCallout}
 // ─── Main ───
 
 function main(): void {
-  const data = loadReportData(RESULTS_DIR);
+  // Parse --codebases filter (comma-separated or repeated)
+  const args = process.argv.slice(2);
+  const codebaseFilter = new Set<string>();
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--codebases' && args[i + 1]) {
+      for (const id of args[i + 1]!.split(',')) codebaseFilter.add(id.trim());
+      i++;
+    }
+  }
+
+  let data = loadReportData(RESULTS_DIR);
   if (!data) {
     console.error('No report-data.json found. Run `npm run report` or `npm run analyze` first.');
     process.exit(1);
   }
 
-  console.log(`Reading report data (${data.totalRuns} runs, ${data.codebaseIds.length} codebases)`);
+  // Filter codebases if requested
+  if (codebaseFilter.size > 0) {
+    data = {
+      ...data,
+      codebaseIds: data.codebaseIds.filter((id) => codebaseFilter.has(id)),
+      codebases: data.codebases.filter((cb) => codebaseFilter.has(cb.codebaseId)),
+      gtMissedByAllTotal: data.codebases
+        .filter((cb) => codebaseFilter.has(cb.codebaseId))
+        .reduce((sum, cb) => sum + cb.missedGt.length, 0),
+      gtTotalAll: data.codebases
+        .filter((cb) => codebaseFilter.has(cb.codebaseId))
+        .reduce((sum, cb) => sum + cb.gtTotal, 0),
+    };
+  }
+
+  console.log(`Reading report data (${data.codebases.reduce((s, cb) => s + cb.runs.length, 0)} runs, codebases: ${data.codebaseIds.join(', ')})`);
 
   const metrics = aggregateAcrossCodebases(data);
   const active = CONDITION_DISPLAY.filter((c) => metrics.has(c.id));
   const rows = buildMetricRows(metrics, active, data.gtTotalAll);
-  const html = renderHTML(rows, active, data);
+  const html = renderHTML(rows, active, data, metrics);
 
   fs.writeFileSync(OUTPUT_FILE, html, 'utf8');
   console.log(`Dashboard written to ${OUTPUT_FILE}`);

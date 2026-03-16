@@ -24,6 +24,10 @@ npm run analyze
 
 # 3. Read the results
 cat summary.md
+
+# 4. Management dashboard (optional, no LLM calls)
+npm run dashboard
+open dashboard.html
 ```
 
 ## Project Structure
@@ -32,6 +36,7 @@ cat summary.md
 src/
   shared/           Types, parser, utilities — shared across all modules
     types.ts        Central type definitions
+    report-data.ts  Shared data feed (ReportData) — single source of truth for all renderers
     parser.ts       Finding extraction from raw audit output
     util/           Logger, shell helpers
   runner/           Benchmark execution — spawns claude, captures output
@@ -48,14 +53,16 @@ src/
     validate.ts     Novel validation against scoped source code
     pipeline.ts     Orchestrator: classify → cluster → validate
     pipeline-cli.ts CLI entrypoint (npm run analyze)
-  reports/          Report generation — consumes classifier output
-    report.ts       Management report (deterministic tables + LLM narrative)
+  reports/          Report generation — consumes shared data feed
+    report.ts       Markdown renderer (deterministic tables + LLM narrative)
     report-cli.ts   CLI entrypoint (npm run report)
+  dashboard/        Management HTML dashboard — consumes same shared data feed
+    render.ts       HTML renderer (npm run dashboard)
 config/             JSON benchmark configs (bench.json)
 datasets/           Solidity codebases to audit (submodules + canary inline)
 skills_versions/    Pinned skill snapshots (v1/, v2/, each with source.json provenance)
 workspaces/         Ephemeral real-copy workspaces (gitignored, auto-cleaned)
-results/            Run outputs: .stdout.txt, .meta.json, .events.jsonl, .stderr.txt per run (gitignored)
+results/            Run outputs + report-data.json shared feed (gitignored)
 ground_truth/       Known-bug answer keys per codebase (JSON, enables Recall/FP scoring)
 ground_truth/reports/  Official C4 audit reports (markdown)
 docs/               Isolation strategy, benchmark prompt template, rewrite plan
@@ -113,6 +120,11 @@ npm run analyze -- --latest
 # Standalone report generation
 npm run report
 npm run report:latest
+
+# Management dashboard (HTML, no LLM calls)
+npm run dashboard
+npm run dashboard -- --codebases merkl-stripped
+npm run dashboard -- --codebases merkl-stripped,nft-dealers
 
 # Build TypeScript
 npm run build
