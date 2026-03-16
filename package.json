@@ -15,6 +15,7 @@
     "analyze:cheap": "tsc && node dist/classifier/pipeline-cli.js --no-validate",
     "report": "tsc && node dist/reports/report-cli.js",
     "report:latest": "tsc && node dist/reports/report-cli.js --latest",
+    "dashboard": "tsc && node dist/dashboard/render.js",
     "setup": "mkdir -p results workspaces && touch results/.nosync workspaces/.nosync && echo 'Sync protection markers created.'"
   },
   "dependencies": {
