@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execSimple } from './util/shell.js';
-import * as log from './util/logger.js';
+import { execSimple } from '../shared/util/shell.js';
+import * as log from '../shared/util/logger.js';
 
 const ROOT = process.cwd();
 

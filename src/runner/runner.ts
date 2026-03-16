@@ -1,11 +1,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { BenchConfig, CliOptions, CodebaseConfig, ConditionConfig, RunMeta } from './types.js';
+import type { BenchConfig, CliOptions, CodebaseConfig, ConditionConfig, RunMeta } from '../shared/types.js';
 import { getRunCwd, prepareWorkspace, resolveGitCommit, cleanupWorkspaces, resetWorkspaceCache } from './workspace.js';
 import { skillSrcPath, resolveSkillGitCommit } from './skill.js';
-import { spawnClaude } from './util/shell.js';
+import { spawnClaude } from '../shared/util/shell.js';
 import { verifyRun, printVerifyResults, type VerifyResult } from './verify.js';
-import * as log from './util/logger.js';
+import * as log from '../shared/util/logger.js';
 
 const ROOT = process.cwd();
 
@@ -36,7 +36,7 @@ function extractModelFromEvents(runId: string): string | undefined {
 
 async function getClaudeVersion(): Promise<string | undefined> {
   try {
-    const { execSimple } = await import('./util/shell.js');
+    const { execSimple } = await import('../shared/util/shell.js');
     return await execSimple('claude --version');
   } catch {
     return undefined;

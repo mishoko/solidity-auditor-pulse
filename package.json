@@ -3,16 +3,19 @@
   "version": "0.1.0",
   "description": "Benchmark solidity-auditor Claude Code skill vs bare Claude baseline",
   "type": "module",
-  "main": "dist/cli.js",
+  "main": "dist/runner/cli.js",
   "bin": {
-    "bench": "dist/cli.js"
+    "bench": "dist/runner/cli.js"
   },
   "scripts": {
     "build": "tsc",
-    "bench": "tsc && node dist/cli.js",
-    "bench:dry": "tsc && node dist/cli.js --dry-run",
-    "summary:last-run": "tsc && node dist/summary.js",
-    "summary:all-runs": "tsc && node dist/summary.js --all-runs"
+    "bench": "tsc && node dist/runner/cli.js",
+    "bench:dry": "tsc && node dist/runner/cli.js --dry-run",
+    "analyze": "tsc && node dist/classifier/pipeline-cli.js",
+    "analyze:cheap": "tsc && node dist/classifier/pipeline-cli.js --no-validate",
+    "report": "tsc && node dist/reports/report-cli.js",
+    "report:latest": "tsc && node dist/reports/report-cli.js --latest",
+    "setup": "mkdir -p results workspaces && touch results/.nosync workspaces/.nosync && echo 'Sync protection markers created.'"
   },
   "dependencies": {
     "chalk": "^5.3.0",

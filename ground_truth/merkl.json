@@ -2,7 +2,7 @@
   "codebaseId": "merkl",
   "source": "Code4rena — November 25 to December 1, 2025",
   "reportUrl": "ground_truth/reports/merkl.md",
-  "description": "Merkl distribution contracts — 2 contracts, 604 nSLOC",
+  "description": "Merkl distribution contracts",
   "findings": [
     {
       "id": "M-01",
@@ -11,7 +11,7 @@
       "rootCause": "distributioncreator::fee-order",
       "location": "DistributionCreator._createCampaign",
       "line": 533,
-      "description": "rewardTokenMinAmounts check uses gross newCampaign.amount before _computeFees deducts protocol fees. Campaigns pass the check but actually distribute below minimum rate."
+      "description": "The rewardTokenMinAmounts check at line 533 validates against newCampaign.amount (gross) before _computeFees deducts protocol fees at line 535. The net amount is then stored at line 538. With 10% fees, a campaign with exactly the minimum rate (e.g. 1e8 tokens/hour) passes validation but actually distributes 0.9e8 tokens/hour — 10% below the governance-set minimum. The core bug is validation order: check happens before fee deduction, and there is no re-validation after."
     },
     {
       "id": "M-02",
@@ -20,7 +20,7 @@
       "rootCause": "distributor::try-catch-onclaim",
       "location": "Distributor._claim",
       "line": 482,
-      "description": "try/catch around IClaimRecipient.onClaim — invalid return reverts inside try (uncaught), genuine external failures silently swallowed by empty catch. Malicious recipient can DOS batch claims."
+      "description": "The try/catch around IClaimRecipient.onClaim has asymmetric error handling. The magic value return check (verifying the callback returned the correct selector) is inside the try block's success handler — not inside the catch. This means: (1) if the external call succeeds but returns wrong magic value, it triggers a revert inside try that is NOT caught by the empty catch, aborting the entire batch claim and rolling back all token transfers (DoS vector). (2) If the external call genuinely reverts, the empty catch silently swallows it, allowing recipients to bypass intended callback logic. A malicious recipient can exploit either path: return bad magic value to DoS batch claims, or revert to skip post-claim hooks."
     },
     {
       "id": "M-03",
@@ -29,7 +29,7 @@
       "rootCause": "distributioncreator::override-anchor",
       "location": "DistributionCreator.overrideCampaign",
       "line": 237,
-      "description": "overrideCampaign validates against original campaignList entry, not the latest campaignOverrides. Second override fails if original start is in the past, even though effective campaign hasn't started."
+      "description": "overrideCampaign always validates against the original campaign parameters stored in campaignList, not against the latest campaignOverrides entry. After a first override moves startTimestamp from 1000 to 2000, a second override at block.timestamp=1500 fails because the check (newCampaign.startTimestamp != _campaign.startTimestamp && block.timestamp > _campaign.startTimestamp) evaluates against the original start (1000), not the overridden start (2000). The effective campaign hasn't started yet, but the contract refuses the override because the original start is in the past. Fix requires reading from campaignOverrides when an override exists."
     },
     {
       "id": "L-01",
@@ -38,7 +38,7 @@
       "rootCause": "distributor::push-refund-blacklist",
       "location": "Distributor.resolveDispute",
       "line": 355,
-      "description": "Push pattern safeTransfer to disputer reverts if disputer is token-blacklisted (e.g. USDC). Governor cannot resolve dispute or revokeTree — system deadlocked."
+      "description": "resolveDispute(true) uses push pattern: safeTransfer sends disputeAmount directly to the disputer address. If disputer is token-blacklisted (e.g. USDC blacklist), the safeTransfer reverts. Governor then cannot call revokeTree() either, because it checks (disputer != address(0)) and reverts with UnresolvedDispute. System is deadlocked: cannot resolve dispute, cannot revoke tree. The only escape is resolveDispute(false) which sends funds to Governor (unfair to honest disputer) and does NOT revoke the potentially malicious tree. Fix: use pull pattern with pendingRefunds mapping instead of direct transfer."
     },
     {
       "id": "L-02",
@@ -47,7 +47,7 @@
       "rootCause": "distributioncreator::override-timestamp-var",
       "location": "DistributionCreator.overrideCampaign",
       "line": 244,
-      "description": "End-time check uses _campaign.startTimestamp (original) instead of newCampaign.startTimestamp (new). Allows setting start and end timestamps both in the past."
+      "description": "The end-time validation at line 244 checks (newCampaign.duration + _campaign.startTimestamp <= block.timestamp) but uses _campaign.startTimestamp (the original value) instead of newCampaign.startTimestamp (the new value being set). Attack: creator makes campaign with future start (block.timestamp + 10 days), then overrides with past start and short duration. Validation passes because it checks newDuration + OLD_startTimestamp which is still in future, but the campaign now has both start and end timestamps in the past. Impact limited because off-chain engine is documented to ignore invalid overrides."
     },
     {
       "id": "L-03",
@@ -56,7 +56,7 @@
       "rootCause": "distributioncreator::override-no-min-rate",
       "location": "DistributionCreator.overrideCampaign",
       "line": 236,
-      "description": "Override can change duration without re-checking rewardTokenMinAmounts, allowing dust campaigns that bypass governance-set spam protection."
+      "description": "overrideCampaign validates that rewardToken and amount cannot change, but does NOT re-check if the new duration would result in reward rate below the rewardTokenMinAmounts threshold. Two-step exploit: create campaign with compliant rate (1.8e8 tokens for 1 hour), then override to extend duration to 10 hours. New rate becomes 1.8e7/epoch, below the minimum of 1e8/epoch. This bypasses the governance-set spam protection that _createCampaign enforces. Fix: add the same (newCampaign.amount * HOUR) / newCampaign.duration < rewardTokenMinAmount check to overrideCampaign."
     },
     {
       "id": "L-04",
@@ -65,7 +65,7 @@
       "rootCause": "distributioncreator::fee-order-net-amount",
       "location": "DistributionCreator._createCampaign",
       "line": 533,
-      "description": "Same root cause as M-01 from a different warden's perspective. rewardTokenMinAmounts check at line 533 uses gross amount, then _computeFees deducts fees at line 535, and net amount is stored at line 538. Campaigns pass check but distribute below minimum."
+      "description": "Same root cause as M-01 from a different warden's perspective. The rewardTokenMinAmounts check at line 533 uses gross amount, then _computeFees deducts fees at line 535, and net amount is stored at line 538. Campaigns pass the check but distribute below the governance-set minimum rate. The fix is to move validation after fee calculation so it checks the net amount."
     },
     {
       "id": "L-05",
@@ -74,7 +74,7 @@
       "rootCause": "distributor::stale-root-dispute",
       "location": "Distributor.getMerkleRoot",
       "line": 233,
-      "description": "Returns lastTree.merkleRoot during dispute window. If old tree has inflated rewards, users can front-run correction by claiming at old rates before new tree activates."
+      "description": "getMerkleRoot() returns lastTree.merkleRoot during dispute period (when block.timestamp < endOfDisputePeriod or disputer != address(0)). Design assumes old tree is safe and new tree might be malicious. But when the scenario is reversed — old tree has inflated rewards from off-chain computation error and new tree is the correction — users can front-run the correction by claiming at old inflated rates during the dispute window. Example: alice has 100 tokens in old tree but should have 10 in corrected tree; she claims 100 during dispute period before correction activates. Governor can mitigate with double-update pattern or draining via recoverERC20, but must react fast."
     }
   ]
 }

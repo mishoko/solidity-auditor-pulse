@@ -6,8 +6,8 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { RunMeta } from './types.js';
-import * as log from './util/logger.js';
+import type { RunMeta } from '../shared/types.js';
+import * as log from '../shared/util/logger.js';
 
 const ROOT = process.cwd();
 
@@ -527,13 +527,18 @@ export function verifyRun(
     warnings.push(`${initCount} init events detected (CLI restarted after completion — known bug, grace-kill handled it)`);
   }
 
-  // ── Check 12: Has output content ──
+  // ── Check 12: Has output content (mode-aware threshold) ──
+  // Skill runs always produce substantial output (multiple agents → long reports).
+  // Bare runs may be shorter on small codebases.
   if (fs.existsSync(stdoutPath)) {
     const stdout = fs.readFileSync(stdoutPath, 'utf8');
     const lineCount = stdout.split('\n').length;
+    const minLines = meta.mode === 'skill' ? 50 : 10;
     checks['has_output'] = {
-      ok: lineCount > 5,
-      detail: `${lineCount} lines of output`,
+      ok: lineCount >= minLines,
+      detail: lineCount >= minLines
+        ? `${lineCount} lines of output`
+        : `${lineCount} lines of output (expected ≥${minLines} for ${meta.mode} run)`,
     };
   } else {
     checks['has_output'] = {

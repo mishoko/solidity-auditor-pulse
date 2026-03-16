@@ -3,8 +3,8 @@
 import { parseArgs } from 'node:util';
 import { loadConfig } from './config.js';
 import { runBench } from './runner.js';
-import type { CliOptions } from './types.js';
-import * as log from './util/logger.js';
+import type { CliOptions } from '../shared/types.js';
+import * as log from '../shared/util/logger.js';
 
 function printUsage(): void {
   console.log(`

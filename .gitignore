@@ -1,7 +1,12 @@
 node_modules/
 dist/
-results/
+results/*
+!results/.nosync
+workspaces/*
+!workspaces/.nosync
 .env
 *.tsbuildinfo
 .DS_Store
 /docs-temp
+/archive-results
+summary.md

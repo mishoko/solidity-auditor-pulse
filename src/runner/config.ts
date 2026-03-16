@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
-import type { BenchConfig } from './types.js';
+import type { BenchConfig } from '../shared/types.js';
 
 const CodebaseSchema = z.object({
   id: z.string(),
