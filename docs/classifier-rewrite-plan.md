@@ -292,6 +292,19 @@ These are tracked but not scheduled. Each delivers value independently.
 - Currently inflates finding counts for verbose conditions (Bare CC)
 - Low priority: clustering already handles cross-run dedup
 
+**F6. Non-GT triage step** (high value for no-GT quality)
+- **Problem**: Without GT, ALL findings (including FP) go directly to clustering with sparse reasoning (`"Location: X. Type: Y."`). No FP filtering, no quality gate before clustering. Clustering receives more noise, and if validation is skipped, output is entirely unverified.
+- **Solution**: Add a Sonnet triage step before clustering for non-GT codebases:
+  - For each finding: Sonnet answers "Is this a concrete vulnerability or noise?"
+  - Binary decision: `real_concern` or `noise` — simpler than full classification
+  - No GT needed — just evaluates whether the finding describes a real exploit path
+  - Noise findings excluded from clustering (or tagged so report can filter them)
+- **Model**: Sonnet (not Opus) — the decision is binary and doesn't need source code
+- **Cost**: ~1 Sonnet call per finding (~$0.01-0.02 each). Pays for itself by reducing Opus validation calls on fake clusters
+- **Example**: nft-dealers has 22 findings → 17 clusters → 5 rejected by Opus. Triage could filter those 5 before clustering, saving 5 Opus calls (~$0.75) and producing cleaner clusters
+- **Why not now**: Opus validation already catches FP clusters (11 confirmed, 5 rejected — correct final output). Triage is an optimization that improves cost efficiency and clustering quality, not a correctness fix
+- **Implementation**: New `triage.ts` in `src/classifier/`, called from `pipeline.ts` between parse and cluster when no GT exists. Caching by `sha256(stdoutContent + triagePrompt)`
+
 ## QA Assessment (2026-03-15)
 
 ### What's Solid
