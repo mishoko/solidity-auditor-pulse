@@ -50,7 +50,7 @@ The full dataset in `datasets/<codebase>/` contains the entire repo — tests, m
   {
     "id": "<CODEBASE>-stripped",
     "path": "datasets/<CODEBASE>-stripped",
-    "gitCommit": "<same commit as original codebase entry>"
+    "gitCommit": "<same commit as original codebase entry, omit if original has none>"
   }
   ```
 
@@ -73,7 +73,33 @@ Summarize:
 - Do NOT include v1_deep condition (we don't test it)
 - Do NOT modify the original dataset in `datasets/<CODEBASE>/`
 - Do NOT modify any existing ground truth files
-- The benchmark will be run with `CLASSIFY_VOTES=3` for 3-vote Sonnet classification
+- Classification uses `CLASSIFY_VOTES=3` for 3-vote Sonnet classification (set on `npm run analyze`, NOT on `npm run bench` — the runner doesn't classify)
+
+## Running the benchmark after creation
+
+Once the stripped dataset is set up and dry-run passes, run these commands in order:
+
+1. **Archive previous results** (if any exist in `results/`):
+   ```bash
+   npm run archive
+   ```
+
+2. **Run benchmark** (3 conditions x 3 runs, parallel):
+   ```bash
+   npm run bench -- --codebases <CODEBASE>-stripped --conditions bare_audit,skill_v1_default,skill_v2 --runs 3 --parallel
+   ```
+
+3. **Analyze** (classify → cluster → validate → report):
+   ```bash
+   CLASSIFY_VOTES=3 npm run analyze
+   ```
+   This generates `summary.md` with the full report.
+
+4. **Generate dashboard** (HTML, no LLM calls):
+   ```bash
+   npm run dashboard
+   open dashboard.html
+   ```
 ```
 
 ---
@@ -103,19 +129,3 @@ Totals    1324
 ```
 
 (Replace X with actual nSLOC values from the contest page.)
-
-## Running the benchmark after creation
-
-```bash
-# Archive previous results first
-npm run archive
-
-# Run benchmark (3 conditions x 3 runs)
-npm run bench -- --codebases <CODEBASE>-stripped --conditions bare_audit,skill_v1_default,skill_v2 --runs 3 --parallel
-
-# Analyze with 3-vote classification
-CLASSIFY_VOTES=3 npm run analyze
-
-# Read results
-cat summary.md
-```
