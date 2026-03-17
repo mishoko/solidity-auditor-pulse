@@ -188,7 +188,7 @@ Track bugs discovered while writing tests — fix root cause, not the test.
 - [x] **Step 14:** Fix cluster/validate mtime caching → content hashing (align with classify). `cache.test.ts` (3.2, 5.2) — 16 tests: all 3 phases cache contract (hash determinism, invalidation on content/model change, cross-phase consistency, corrupt file handling)
 - [x] **Step 15:** `provenance.test.ts` (5.1) — 10 tests: meta.json shape (identity, timing, model, skill provenance, git commit, runId encoding, stdout existence), classification file cache keys
 
-210 tests across 12 test files. 3 production bugs fixed + 1 design issue fixed (cache consistency).
+260 tests across 14 test files. 5 production bugs fixed + 1 design issue fixed (cache consistency) + incremental clustering tested.
 
 ## CI Considerations (future)
 

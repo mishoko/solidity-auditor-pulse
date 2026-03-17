@@ -174,7 +174,12 @@ reasoning: `Location: ${finding.location ?? 'unknown'}. Type: ${finding.vulnType
 
 ### What happens
 
-**Single Sonnet call per codebase** — all findings batched into one prompt:
+**Two clustering paths:**
+
+- **Incremental (default):** new findings matched against existing clusters in batches of 5. Existing clusters stay stable. Stale foundIn entries pruned when findings are reclassified.
+- **Full (--force or first run):** all findings clustered from scratch in chunks of ≤15 for reliable LLM responses.
+
+Full path detail (single Sonnet call per chunk):
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -220,8 +225,8 @@ After the LLM call:
 | Metric | Value |
 |--------|-------|
 | Model | Sonnet (`claude-sonnet-4-20250514`) |
-| Calls per codebase | **1** (single call, all findings batched) |
-| Total calls | 1 per codebase (e.g., 2 for merkl-stripped + nft-dealers) |
+| Calls per codebase | **Incremental:** 1 per batch of 5 new findings. **Full:** 1 per chunk of ≤15 findings. |
+| Total calls | Incremental: typically 1-3. Full: ceil(N/15). Cached: 0. |
 | Retries | Up to 3 on failure |
 | Timeout | 180s (configurable via `CLUSTER_TIMEOUT_MS`) |
 
@@ -231,6 +236,8 @@ After the LLM call:
 
 ```
 {
+  inputHash: "6ed09a10821218a2", // content-based cache key (inputs + model + scoping)
+  clusterModel: "claude-sonnet-4-20250514",
   totalFindings: 47,           // input count
   uniqueBugs: 21,              // output count (deduplicated)
   clusters: [
@@ -364,6 +371,8 @@ This enables post-validation filtering without losing data — the finding stays
 
 ```
 {
+  clusterHash: "5a602c11eb11dabc",  // content-based cache key (cluster file + model)
+  validatorModel: "claude-opus-4-6",
   confirmed: 7,    // real bugs with verified exploit path
   plausible: 3,    // reasonable but conditional
   rejected: 11,    // not real or prevented by guards

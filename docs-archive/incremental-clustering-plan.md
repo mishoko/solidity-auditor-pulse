@@ -110,12 +110,33 @@ Update `collectAllFindings()` to extract ~5 lines of description from the raw st
 
 Update `collectNovelFindings()`: no change needed — classifier reasoning is already good context.
 
+**Tests (Step 1):**
+- [x] Skill format extracts description body text (not title, not location line)
+- [x] Bare format extracts description body text
+- [x] Description stops at next finding header — does not bleed across findings
+- [x] Code blocks stripped from description
+- [x] Long descriptions truncated at ~300 chars
+- [x] Every finding has non-empty description across all 7 format variants
+- [x] `collectAllFindings` produces reasoning with description body (not just "Location: X. Type: Y.")
+- [x] Reasoning contains actual vulnerability description, not thin placeholder
+- [x] Location and Type preserved at end of reasoning string
+- [x] Snapshots updated for all format variants
+
 ### Step 2: Build incremental assignment prompt
 
 New function `buildIncrementalPrompt(newFindings, existingClusters)`:
 - Compact cluster summaries (title + reasoning + severity + member count)
 - Full finding context (title + reasoning + description)
 - Output schema: `[{ findingIndex, assignTo: "existing-clusterId" | "new", newTitle?, newReasoning?, newSeverity? }]`
+
+**Tests (Step 2) — write BEFORE implementation:**
+- [ ] Prompt includes all existing cluster summaries (title + reasoning + severity + count)
+- [ ] Prompt includes full finding context (title + reasoning)
+- [ ] Prompt does NOT include cluster foundIn arrays or metadata (keep it lean)
+- [ ] Prompt handles 0 existing clusters (first-run case → becomes full clustering)
+- [ ] Prompt handles 1 new finding (simplest incremental case)
+- [ ] Prompt handles batch of 5 new findings
+- [ ] Zod schema validates the expected response shape
 
 ### Step 3: Refactor clusterFindings()
 
@@ -124,30 +145,64 @@ Split into:
 - `clusterFindingsFull()` — force path, chunks of ~15, merge across chunks
 - `clusterFindings()` — orchestrator, picks the right path
 
+**Tests (Step 3) — write BEFORE implementation:**
+- [ ] Incremental: 1 new finding assigned to existing cluster → foundIn updated, conditionsCaught updated
+- [ ] Incremental: 1 new finding creates new cluster → new cluster appended with correct shape
+- [ ] Incremental: batch of 3 new findings, mix of matches and new → both paths work in same call
+- [ ] Incremental: new finding for cluster that already has the same condition → no duplicate in conditionsCaught
+- [ ] Full (--force): 20 findings split into 2 chunks of ~10 → all findings assigned, no orphans
+- [ ] Full: chunks merged correctly — duplicate clusters across chunks detected and merged
+- [ ] Edge: first run (no existing clusters) → full clustering path used automatically
+- [ ] Edge: all new findings match existing clusters → no new clusters created, existing updated
+- [ ] Edge: empty findings input → returns null (existing behavior preserved)
+- [ ] Orchestrator: without --force + existing clusters → incremental path chosen
+- [ ] Orchestrator: with --force → full path chosen regardless of existing clusters
+- [ ] Result shape: ClusterResult has correct totalFindings, uniqueBugs, inputHash
+
 ### Step 4: Update cache logic
 
-inputHash now depends on:
-- Existing cluster state (hash of cluster titles — stable reference)
-- New findings only (not all findings)
-- Model + scoping options
+Cache key changes for incremental mode:
+- inputHash = hash of (existing cluster titles + new finding titles + model)
+- Cache hit when: no new findings (all already in clusters) AND model unchanged
+- Cache miss when: new findings exist OR model changed OR --force
 
-### Step 5: Tests
+**Tests (Step 4):**
+- [ ] Cache hit: no new findings, same model → skip (return existing)
+- [ ] Cache miss: new findings exist → incremental assignment runs
+- [ ] Cache miss: model changed → full re-cluster
+- [ ] --force: always re-cluster regardless of cache state
+- [ ] inputHash written to output file and checked on next run
+- [ ] Old cluster files without inputHash (migration) → treated as cache miss
 
-- Incremental: 1 new finding matched to existing cluster
-- Incremental: 1 new finding creates new cluster
-- Incremental: batch of 5 new findings, mix of matches and new
-- Full: 20 findings chunked into 2 groups of 10
-- Edge: first run (no existing clusters)
-- Edge: zero new findings (cache hit)
-- Context: no-GT findings carry description
+### Step 5: E2E validation
+
+Run the full pipeline on real data to verify incremental clustering works end-to-end.
+
+**Tests (Step 5):**
+- [ ] `npm run analyze` on merkl-stripped with existing clusters → incremental path used, no 47-finding mega-prompt
+- [ ] New run's findings correctly assigned to existing clusters or create new ones
+- [ ] Validation step works correctly with incrementally-updated clusters
+- [ ] Report metrics stable (no drift from cluster ID changes)
+- [ ] Dashboard renders correctly
 
 ## Order of execution
 
-1. **Step 1** first — enriching context is a standalone improvement, benefits current clustering too
-2. **Step 3** (refactor clusterFindings) — core logic change
-3. **Step 2** (new prompt) — called by step 3
-4. **Step 4** (cache) — depends on step 3
-5. **Step 5** (tests) — validates everything
+Each step is tested before moving to the next. Tests written first where possible.
+
+1. **Step 1** ✅ — enriching context (10 tests: description extraction, edge cases, cluster context quality)
+2. **Step 2** ✅ — incremental prompt + Zod schema (13 tests: schema validation, prompt construction, LLM integration)
+3. **Step 3** ✅ — refactor clusterFindings (12 tests: full path, incremental assign/new, force flag, cache hit, no new findings, empty, single, foundIn dedup, conditionsCaught dedup, stale pruning, empty cluster removal)
+4. **Step 4** ✅ — cache logic (covered by Step 3 tests: cache hit, cache miss, inputHash written)
+5. **Step 5** ✅ — E2E on real data: incremental path used for merkl-stripped (1 new → 21 clusters, 26s), cache hit on second run (0s), nft-dealers cached. Bugs found during review: stale foundIn pruning, single-finding fast path overwriting existing clusters — both fixed and tested.
+
+### Additional fixes found during clustering review
+
+- Stale foundIn entries pruned when findings are reclassified (novel→matched)
+- Empty clusters dropped after pruning
+- Single-finding fast path no longer overwrites existing clusters
+- Duplicate foundIn guard in incremental assignment
+- LLM parse errors now include raw response preview (up to 200 chars)
+- Module header comment updated to reflect incremental/full architecture
 
 ## Not in scope
 
