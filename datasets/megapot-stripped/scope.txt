@@ -1,0 +1,16 @@
+./contracts/lib/Combinations.sol
+./contracts/lib/FisherYatesWithRejection.sol
+./contracts/lib/JackpotErrors.sol
+./contracts/lib/TicketComboTracker.sol
+./contracts/lib/UintCasts.sol
+./contracts/GuaranteedMinimumPayoutCalculator.sol
+./contracts/Jackpot.sol
+./contracts/JackpotBridgeManager.sol
+./contracts/JackpotLPManager.sol
+./contracts/JackpotTicketNFT.sol
+./contracts/ScaledEntropyProvider.sol
+./contracts/interfaces/IJackpot.sol
+./contracts/interfaces/IJackpotLPManager.sol
+./contracts/interfaces/IJackpotTicketNFT.sol
+./contracts/interfaces/IPayoutCalculator.sol
+./contracts/interfaces/IScaledEntropyProvider.sol

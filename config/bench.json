@@ -34,6 +34,11 @@
     {
       "id": "nft-dealers",
       "path": "datasets/nft-dealers"
+    },
+    {
+      "id": "megapot-stripped",
+      "path": "datasets/megapot-stripped",
+      "gitCommit": "f0a7297d59c376e38b287b2c56740617dbbfbdc7"
     }
   ],
   "conditions": [

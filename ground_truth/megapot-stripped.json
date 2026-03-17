@@ -1,0 +1,179 @@
+{
+  "codebaseId": "megapot-stripped",
+  "source": "Code4rena \u2014 November 3 to November 13, 2025",
+  "reportUrl": "ground_truth/reports/megapot.md",
+  "description": "Megapot jackpot system (stripped) \u2014 16 contracts, 1709 nSLOC",
+  "findings": [
+    {
+      "id": "H-01",
+      "severity": "high",
+      "title": "Attacker can steal JackpotTicketNFT\u2019s from JackpotBridgeManager.sol",
+      "rootCause": "jackpotbridgemanager::arbitrary-external-call",
+      "location": "JackpotBridgeManager._bridgeFunds",
+      "line": 345,
+      "description": "_bridgeFunds performs an arbitrary external call to user-controlled _bridgeDetails.to with user-controlled calldata. Attacker crafts claimWinnings with malicious bridge details that call safeTransferFrom on the NFT contract, stealing other users' custodied NFTs while passing the USDC balance check via re-entrancy."
+    },
+    {
+      "id": "H-02",
+      "severity": "high",
+      "title": "Unoptimized subset matches counting implementation will exceed tx gas limit on base chain",
+      "rootCause": "ticketcombotracker::redundant-subset-generation",
+      "location": "TicketComboTracker._countSubsetMatches",
+      "line": 157,
+      "description": "_countSubsetMatches regenerates Combinations.generateSubsets inside a nested loop over bonusballMax * normalTiers. For high bonusballMax values (e.g. 129), gas exceeds Base chain's 25M limit, permanently preventing drawing settlement via scaledEntropyCallback."
+    },
+    {
+      "id": "H-03",
+      "severity": "high",
+      "title": "LP pool cap may be exceeded on drawing settlement",
+      "rootCause": "jackpotlpmanager::uncapped-settlement-growth",
+      "location": "JackpotLPManager.processDrawingSettlement",
+      "line": 378,
+      "description": "processDrawingSettlement calculates newLPValue without enforcing the pool cap. LP value can grow by up to lpEdgeTarget (30%) per draw without a jackpot winner, exceeding governance cap. This breaks bit-packing invariants when normalBallMax + bonusballMax > 255, causing DoS on ticket purchases."
+    },
+    {
+      "id": "M-01",
+      "severity": "medium",
+      "title": "Global Variable Manipulation During Active Draw Alters End Result",
+      "rootCause": "jackpot::mutable-draw-params",
+      "location": "Jackpot.setProtocolFee",
+      "line": 923,
+      "description": "Owner can modify protocolFee, referralFee, payoutCalculator, entropy, and jackpotLPManager during an active draw. These are read at settlement time, allowing admin to alter fee distribution, payout logic, or randomness handling after tickets are purchased."
+    },
+    {
+      "id": "M-02",
+      "severity": "medium",
+      "title": "Incorrect ticket price reference in JackpotBridgeManager causes user overpayment after price updates",
+      "rootCause": "jackpotbridgemanager::stale-ticket-price",
+      "location": "JackpotBridgeManager.buyTickets",
+      "line": 178,
+      "description": "buyTickets reads jackpot.ticketPrice() (global latest) instead of the drawing-specific frozen price. If price increases mid-drawing, bridge users overpay and excess is locked. If price decreases, insufficient approval causes DoS."
+    },
+    {
+      "id": "M-03",
+      "severity": "medium",
+      "title": "Deliberately increasing liquidity can DoS updates to the protocol's governance parameters",
+      "rootCause": "jackpotlpmanager::deposit-blocks-cap-change",
+      "location": "JackpotLPManager.setLPPoolCap",
+      "line": 431,
+      "description": "setLPPoolCap reverts if new cap < lpPoolTotal + pendingDeposits. LPs can frontrun governance parameter updates (setNormalBallMax, setGovernancePoolCap, setTicketPrice, etc.) with deposits to exceed the new cap, blocking the update."
+    },
+    {
+      "id": "M-04",
+      "severity": "medium",
+      "title": "lpEarnings generated in emergency mode become stuck on the contract",
+      "rootCause": "jackpot::emergency-mode-stuck-earnings",
+      "location": "Jackpot._payReferrersWinnings",
+      "line": 1682,
+      "description": "In emergency mode, claimWinnings is still callable for past drawings. When tickets have no referral scheme, referrer shares are added to drawingState[currentDrawingId].lpEarnings. Since runJackpot is blocked by noEmergencyMode, these earnings are never settled and remain permanently stuck."
+    },
+    {
+      "id": "M-05",
+      "severity": "medium",
+      "title": "Randomness can be exploited in some cases",
+      "rootCause": "scaledentropyrovider::shared-seed-overlap",
+      "location": "ScaledEntropyProvider.entropyCallback",
+      "line": 245,
+      "description": "Normal balls and bonus ball are generated from the same seed via _getScaledRandomness. When normalballMax == bonusballMax, the bonus ball always overlaps with normal balls, reducing effective odds from 1-in-4.3M to 1-in-713K, enabling profitable exhaustive ticket purchases."
+    },
+    {
+      "id": "M-06",
+      "severity": "medium",
+      "title": "Changes to Pyth entropy provider used by ScaledEntropyProvider allow attacker to fix jackpot result",
+      "rootCause": "scaledentropyrovider::sequence-collision-on-provider-change",
+      "location": "ScaledEntropyProvider._storePendingRequest",
+      "line": 300,
+      "description": "pending mapping is keyed only by sequence number, not (provider, sequence). When admin changes entropyProvider, attacker pre-registers a crafted request at a sequence number the new provider will reuse, overwriting the callback's setRequests with predetermined 'random' numbers to guarantee winning."
+    },
+    {
+      "id": "M-07",
+      "severity": "medium",
+      "title": "Changing Entropy Provider During Active Drawing Causes Permanent Protocol Lock and Callback Failure",
+      "rootCause": "jackpot::entropy-change-during-draw",
+      "location": "Jackpot.setEntropy",
+      "line": 1193,
+      "description": "Duplicate of M-06 root cause. Changing the entropy provider mid-drawing means the old provider's callback can no longer reach the contract or the sequence mapping is stale, permanently locking the active drawing."
+    },
+    {
+      "id": "M-08",
+      "severity": "medium",
+      "title": "Changing Payout Calculator During Active Drawing Causes Loss of Unclaimed Winnings",
+      "rootCause": "jackpot::payout-calculator-change-during-draw",
+      "location": "Jackpot.setPayoutCalculator",
+      "line": 1171,
+      "description": "Duplicate of M-01 root cause. Changing payoutCalculator mid-drawing means claimWinnings reads tier payouts from the new calculator, which has no data for the old drawing, causing zero payouts or reverts for unclaimed winning tickets."
+    },
+    {
+      "id": "L-01",
+      "severity": "low",
+      "title": "LP Earnings Addition Can Cause LP Pool to Exceed Maximum Capacity",
+      "rootCause": "jackpotlpmanager::earnings-exceed-cap",
+      "location": "JackpotLPManager.processDrawingSettlement",
+      "line": 378,
+      "description": "When LP deposits are at max and no winners are found, lpEarnings from ticket sales are added to postDrawLpValue in processDrawingSettlement, breaking the lpPoolTotal <= lpPoolCap invariant. Different from H-03 which concerns pendingDeposits growth."
+    },
+    {
+      "id": "L-02",
+      "severity": "low",
+      "title": "Pool Cap Check Restricts Future Round Deposits Leading to Diminished Prize Pools",
+      "rootCause": "jackpotlpmanager::pending-deposits-cap-conflation",
+      "location": "JackpotLPManager.processDeposit",
+      "line": 180,
+      "description": "processDeposit cap check includes pendingDeposits (meant for next round) in totalPoolValue. When lpPoolTotal is near cap, deposits for the next round are blocked even though they do not affect the current drawing's prize pool."
+    },
+    {
+      "id": "L-03",
+      "severity": "low",
+      "title": "Missing Validation for Normal and Bonus Ball Sum Exceeding Bit Vector Capacity Causes Incorrect LP Pool Cap Calculation",
+      "rootCause": "jackpot::no-bitvector-overflow-check",
+      "location": "Jackpot._calculateLpPoolCap",
+      "line": 1469,
+      "description": "No validation that normalBallMax + bonusballMax <= 255. When exceeded, bit vector packing becomes invalid and maxAllowableTickets calculation produces an artificially low lpPoolCap."
+    },
+    {
+      "id": "L-04",
+      "severity": "low",
+      "title": "Missing Validation for Normal Ball Max Range Causes Critical Function Failures Due to Combination Library Limits and Underflow",
+      "rootCause": "jackpot::normalballmax-no-range-check",
+      "location": "Jackpot.setNormalBallMax",
+      "line": 886,
+      "description": "normalBallMax is only constrained by uint8 (1-255). Values above 128 panic in Combinations.choose (artificial overflow limit). Values below 5 cause underflow in _calculateTierTotalWinningCombos. Valid range is 5-128 but unenforced."
+    },
+    {
+      "id": "L-05",
+      "severity": "low",
+      "title": "Unbounded Bonus Ball Max Calculation Causes Denial of Service in Drawing Settlement Due to Excessive Gas Consumption",
+      "rootCause": "ticketcombotracker::unbounded-bonusballmax",
+      "location": "TicketComboTracker._countSubsetMatches",
+      "line": 157,
+      "description": "bonusballMax can reach up to 250 (when normalBallMax=5) with no upper bound validation. Large values cause ~31K iterations in _countSubsetMatches, exceeding block gas limit and permanently blocking drawing settlement."
+    },
+    {
+      "id": "L-06",
+      "severity": "low",
+      "title": "Drawing Time Calculation Uses Scheduled End Time Instead of Actual Settlement Time Causing Reduced Duration for Subsequent Drawings",
+      "rootCause": "jackpot::scheduled-vs-actual-time",
+      "location": "Jackpot.scaledEntropyCallback",
+      "line": 717,
+      "description": "Next drawing time is set as currentDrawingState.drawingTime + drawingDurationInSeconds instead of block.timestamp + drawingDurationInSeconds. Settlement delays (entropy provider, gas, congestion) are not accounted for, reducing subsequent drawing durations."
+    },
+    {
+      "id": "L-07",
+      "severity": "low",
+      "title": "Missing User Tickets Mapping Update in JackpotBridgeManager::claimTickets Function Causes Gas Inefficiency and Incorrect Return Values",
+      "rootCause": "jackpotbridgemanager::stale-usertickets-mapping",
+      "location": "JackpotBridgeManager.claimTickets",
+      "line": 268,
+      "description": "claimTickets calls _updateTicketOwnership which deletes ticketOwner entries but does not update userTickets mapping (totalTicketsOwned, ticketIds). getUserTickets then iterates over stale entries, wasting gas and returning incorrect array lengths."
+    },
+    {
+      "id": "L-08",
+      "severity": "low",
+      "title": "Pending Deposits Cannot Be Withdrawn Until Converted to Shares, Forcing Exposure to Game Risk",
+      "rootCause": "jackpotlpmanager::no-pending-deposit-withdrawal",
+      "location": "JackpotLPManager.processInitiateWithdraw",
+      "line": 219,
+      "description": "Withdrawals require consolidatedShares, which are only created from past drawings via _consolidateDeposits. Pending deposits cannot be withdrawn until after settlement, by which point they are added to the next drawing's prize pool and exposed to game risk."
+    }
+  ]
+}
