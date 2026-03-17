@@ -56,6 +56,12 @@ describe('parseOutput — skill format', () => {
     expect(result.findings[2]!.rootCause).toBe('priceoracle::getprice::flash-loan');
   });
 
+  it('extracts description body text', () => {
+    expect(result.findings[0]!.description).toContain('checks-effects-interactions');
+    expect(result.findings[1]!.description).toContain('setPrice');
+    expect(result.findings[2]!.description).toContain('TWAP');
+  });
+
   it('matches snapshot', () => {
     expect(result.findings).toMatchSnapshot();
   });
@@ -97,6 +103,13 @@ describe('parseOutput — bare severity brackets', () => {
 
   it('confidence is null for bare format', () => {
     expect(result.findings.every((f) => f.confidence === null)).toBe(true);
+  });
+
+  it('extracts description body text (bare format)', () => {
+    expect(result.findings[0]!.description).toContain('checks-effects-interactions');
+    expect(result.findings[1]!.description).toContain('setPrice');
+    // Description should not be empty
+    expect(result.findings.every((f) => f.description.length > 0)).toBe(true);
   });
 
   it('matches snapshot', () => {

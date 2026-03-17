@@ -4,6 +4,7 @@ exports[`parseOutput — bare bracketed numbered > matches snapshot 1`] = `
 [
   {
     "confidence": null,
+    "description": "Critical reentrancy vulnerability.",
     "index": 1,
     "location": "Vault.withdraw",
     "rootCause": "vault::withdraw::reentrancy",
@@ -13,6 +14,7 @@ exports[`parseOutput — bare bracketed numbered > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "Return value not validated.",
     "index": 2,
     "location": "Bridge.transfer",
     "rootCause": "bridge::transfer::unchecked-return",
@@ -27,6 +29,7 @@ exports[`parseOutput — bare numbered prefix > matches snapshot 1`] = `
 [
   {
     "confidence": null,
+    "description": "The withdraw function does not follow checks-effects-interactions.",
     "index": 1,
     "location": "Vault.withdraw",
     "rootCause": "vault::withdraw::reentrancy",
@@ -36,6 +39,7 @@ exports[`parseOutput — bare numbered prefix > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "Oracle can be manipulated with flash loans.",
     "index": 2,
     "location": "PriceOracle.getPrice",
     "rootCause": "priceoracle::getprice::flash-loan",
@@ -45,6 +49,7 @@ exports[`parseOutput — bare numbered prefix > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "No zero-address check on recipient parameter.",
     "index": 3,
     "location": "Bridge.deposit",
     "rootCause": "bridge::deposit::other",
@@ -54,6 +59,7 @@ exports[`parseOutput — bare numbered prefix > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "Solidity version not pinned.",
     "index": 4,
     "location": null,
     "rootCause": "unknown::floating-pragma-all-contracts",
@@ -68,6 +74,7 @@ exports[`parseOutput — bare parenthesized severity > matches snapshot 1`] = `
 [
   {
     "confidence": null,
+    "description": "Classic reentrancy.",
     "index": 1,
     "location": "Vault.withdraw",
     "rootCause": "vault::withdraw::reentrancy",
@@ -77,6 +84,7 @@ exports[`parseOutput — bare parenthesized severity > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "MEV bots can front-run user purchases.",
     "index": 2,
     "location": "TokenSale.buy",
     "rootCause": "tokensale::buy::frontrunning",
@@ -86,6 +94,7 @@ exports[`parseOutput — bare parenthesized severity > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "Storage layout mismatch.",
     "index": 3,
     "location": null,
     "rootCause": "unknown::delegatecall-proxy-issue",
@@ -100,6 +109,7 @@ exports[`parseOutput — bare section numbered > matches snapshot 1`] = `
 [
   {
     "confidence": null,
+    "description": "Drain via reentrant call.",
     "index": 1,
     "location": "Vault.withdraw",
     "rootCause": "vault::withdraw::reentrancy",
@@ -109,6 +119,7 @@ exports[`parseOutput — bare section numbered > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "Oracle manipulation via flash loan.",
     "index": 2,
     "location": null,
     "rootCause": "unknown::flash-loan-price-manipulation",
@@ -118,6 +129,7 @@ exports[`parseOutput — bare section numbered > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "No minimum output amount enforced.",
     "index": 3,
     "location": "Router.swap",
     "rootCause": "router::swap::other",
@@ -127,6 +139,7 @@ exports[`parseOutput — bare section numbered > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "Solidity version not pinned.",
     "index": 4,
     "location": null,
     "rootCause": "unknown::floating-pragma",
@@ -141,6 +154,7 @@ exports[`parseOutput — bare severity brackets > matches snapshot 1`] = `
 [
   {
     "confidence": null,
+    "description": "The withdraw function does not follow checks-effects-interactions.",
     "index": 1,
     "location": "Vault.withdraw",
     "rootCause": "vault::withdraw::reentrancy",
@@ -150,6 +164,7 @@ exports[`parseOutput — bare severity brackets > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "Anyone can call setPrice.",
     "index": 2,
     "location": "TokenSale.setPrice",
     "rootCause": "tokensale::setprice::access-control",
@@ -159,6 +174,7 @@ exports[`parseOutput — bare severity brackets > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "The return value of the external call is not checked.",
     "index": 3,
     "location": "Bridge.transfer",
     "rootCause": "bridge::transfer::unchecked-return",
@@ -168,6 +184,7 @@ exports[`parseOutput — bare severity brackets > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "Using storage when memory would suffice. | Severity | Count | |---|---| | Critical | 1 | | High | 1 | | Medium | 1 | | Low | 1 |",
     "index": 4,
     "location": "Storage.update",
     "rootCause": "storage::update::other",
@@ -182,6 +199,7 @@ exports[`parseOutput — bare trailing severity > matches snapshot 1`] = `
 [
   {
     "confidence": null,
+    "description": "Drain attack via reentrant call.",
     "index": 1,
     "location": "Vault.withdraw",
     "rootCause": "vault::withdraw::reentrancy",
@@ -191,6 +209,7 @@ exports[`parseOutput — bare trailing severity > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "Anyone can call setPrice.",
     "index": 2,
     "location": null,
     "rootCause": "unknown::missing-access-control-setprice",
@@ -200,6 +219,7 @@ exports[`parseOutput — bare trailing severity > matches snapshot 1`] = `
   },
   {
     "confidence": null,
+    "description": "Memory could be used instead of storage.",
     "index": 3,
     "location": null,
     "rootCause": "unknown::gas-optimization-opportunity",
@@ -214,6 +234,7 @@ exports[`parseOutput — skill format > matches snapshot 1`] = `
 [
   {
     "confidence": 95,
+    "description": "The withdraw function does not follow checks-effects-interactions pattern.",
     "index": 1,
     "location": "Vault.withdraw",
     "rootCause": "vault::withdraw::reentrancy",
@@ -223,6 +244,7 @@ exports[`parseOutput — skill format > matches snapshot 1`] = `
   },
   {
     "confidence": 80,
+    "description": "Anyone can call setPrice to manipulate the token price.",
     "index": 2,
     "location": "TokenSale.setPrice",
     "rootCause": "tokensale::setprice::access-control",
@@ -232,6 +254,7 @@ exports[`parseOutput — skill format > matches snapshot 1`] = `
   },
   {
     "confidence": 60,
+    "description": "The oracle can be manipulated using a flash loan to skew the TWAP.",
     "index": 3,
     "location": "PriceOracle.getPrice",
     "rootCause": "priceoracle::getprice::flash-loan",

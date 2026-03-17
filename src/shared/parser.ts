@@ -29,6 +29,8 @@ export interface ParsedFinding {
   rootCause: string;
   /** Vulnerability classification from title keywords */
   vulnType: string;
+  /** Body text following the finding header (truncated to ~300 chars). Used for clustering context. */
+  description: string;
   /** True if this finding was recovered from unmatched blocks via LLM fallback */
   recovered?: boolean;
 }
@@ -120,6 +122,26 @@ function extractLocation(title: string, explicitLoc: string | null): string | nu
   if (inMatch?.[1]) return inMatch[1];
 
   return null;
+}
+
+/**
+ * Extract ~300 chars of body text following a finding header.
+ * Stops at the next finding header or section boundary.
+ */
+function extractDescription(lines: string[], startLine: number): string {
+  const bodyLines: string[] = [];
+  for (let j = startLine + 1; j < Math.min(startLine + 20, lines.length); j++) {
+    const line = (lines[j] ?? '').trim();
+    // Stop at next finding header or section boundary
+    if (/^#{2,4}\s+/.test(line) || /^\[\d+\]\s+\*\*\d+\./.test(line) || /^\*\*\d+\.\s+\[/.test(line)) break;
+    // Skip empty lines at the start
+    if (bodyLines.length === 0 && line === '') continue;
+    // Skip location lines (already captured separately)
+    if (/^`[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*`\s+·/.test(line)) continue;
+    if (line) bodyLines.push(line);
+  }
+  const raw = bodyLines.join(' ').replace(/```[\s\S]*?```/g, '').trim();
+  return raw.length > 300 ? raw.slice(0, 297) + '...' : raw;
 }
 
 /**
@@ -390,6 +412,7 @@ function parseSkillFormat(lines: string[]): ParseResult {
         location,
         rootCause: makeRootCause(title, location),
         vulnType: classifyVuln(title),
+        description: extractDescription(lines, i),
       });
     }
 
@@ -503,6 +526,7 @@ function parseBareFormat(lines: string[]): ParseResult {
         location,
         rootCause: makeRootCause(title, location),
         vulnType: classifyVuln(title),
+        description: extractDescription(lines, i),
       });
     }
 
@@ -589,6 +613,7 @@ Respond with ONLY a JSON array (no other text). If a block is not actually a vul
         location,
         rootCause: `${location}::${(r.vulnerabilityType || 'unknown').toLowerCase().replace(/\s+/g, '-')}`,
         vulnType: r.vulnerabilityType || 'unknown',
+        description: r.description || '',
         recovered: true,
       };
     });

@@ -428,12 +428,16 @@ export function collectAllFindings(
     const parseResult = parseOutput(text);
 
     for (const finding of parseResult.findings) {
+      // Use description for richer context (critical for no-GT clustering quality)
+      const reasoning = finding.description
+        ? `${finding.description} Location: ${finding.location ?? 'unknown'}. Type: ${finding.vulnType}.`
+        : `Location: ${finding.location ?? 'unknown'}. Type: ${finding.vulnType}.`;
       inputs.push({
         runId: meta.runId,
         conditionId: meta.conditionId,
         findingIndex: finding.index,
         findingTitle: finding.title,
-        reasoning: `Location: ${finding.location ?? 'unknown'}. Type: ${finding.vulnType}.`,
+        reasoning,
       });
     }
   }
