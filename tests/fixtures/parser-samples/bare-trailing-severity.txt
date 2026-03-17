@@ -1,0 +1,13 @@
+## Security Assessment
+
+### 1. Reentrancy in Vault.withdraw — **CRITICAL**
+
+Drain attack via reentrant call.
+
+### 2. Missing Access Control on setPrice — **HIGH**
+
+Anyone can call setPrice.
+
+### 3. Gas Optimization Opportunity — **LOW**
+
+Memory could be used instead of storage.

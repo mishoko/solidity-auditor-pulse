@@ -310,7 +310,8 @@ function getMatchedGtIds(c: RunClassification): Set<string> {
   return ids;
 }
 
-function jaccardSimilarity(sets: Set<string>[]): number | null {
+/** Exported for testing — not part of the public API. */
+export function jaccardSimilarity(sets: Set<string>[]): number | null {
   if (sets.length < 2) return null;
   let total = 0;
   let pairs = 0;
@@ -904,6 +905,142 @@ export function computeReportData(
       ).length, 0),
     metricBests,
     integrityViolations,
+  };
+}
+
+/** Filtered view of ReportData for codebase-subset queries (e.g. --codebases merkl-stripped). */
+export interface FilteredReportView {
+  aggregates: CrossCodebaseAggregate[];
+  metricBests: MetricBests;
+  codebaseIds: string[];
+  gtTotalAll: number;
+  gtMissedByAllTotal: number;
+  gtMissedByAllPercent: number;
+  totalExcludedByRiskCategory: number;
+}
+
+/**
+ * Compute filtered aggregates for a subset of codebases.
+ *
+ * This is the ONLY place codebase-subset aggregation math lives.
+ * Dashboard and any future renderer use this instead of computing inline.
+ */
+export function filterByCodebases(
+  data: ReportData,
+  codebaseIds: Set<string>,
+  visibleConditions?: Set<string>,
+): FilteredReportView {
+  const filteredCbs = data.codebases.filter((cb) => codebaseIds.has(cb.codebaseId));
+  const conditionIds = [...new Set(filteredCbs.flatMap((cb) => cb.conditions))].filter(
+    (id) => !visibleConditions || visibleConditions.has(id),
+  );
+
+  const aggregates: CrossCodebaseAggregate[] = conditionIds.map((condId) => {
+    const perCb = filteredCbs
+      .map((cb) => cb.aggregates.find((a) => a.conditionId === condId))
+      .filter((a): a is ConditionAggregate => a !== undefined);
+
+    const base = data.crossCodebaseAggregates.find((a) => a.conditionId === condId);
+
+    // Weighted recall
+    const gtAggs = perCb.filter((a) => a.avgRecall !== null && a.gtTotal !== null);
+    let avgRecall: number | null = null;
+    if (gtAggs.length > 0) {
+      const totalMatched = gtAggs.reduce((sum, a) => sum + (a.avgMatched ?? 0), 0);
+      const totalGt = gtAggs.reduce((sum, a) => sum + (a.gtTotal ?? 0), 0);
+      avgRecall = totalGt > 0 ? totalMatched / totalGt : null;
+    }
+
+    // FP rate
+    const totalFp = perCb.reduce((sum, a) => sum + a.totalFp, 0);
+    const totalFindings = perCb.reduce((sum, a) => sum + a.totalFindings, 0);
+
+    // Consistency
+    const consAggs = perCb.filter((a) => a.consistency !== null);
+    const consistency = consAggs.length > 0
+      ? consAggs.reduce((sum, a) => sum + a.consistency!, 0) / consAggs.length
+      : null;
+
+    // Valid runs
+    const validRuns = perCb.reduce((sum, a) => sum + a.validRuns, 0);
+
+    // Cost (weighted by run count)
+    const costAggs = perCb.filter((a) => a.avgCost !== null && a.validRuns > 0);
+    const avgCost = costAggs.length > 0
+      ? costAggs.reduce((sum, a) => sum + a.avgCost! * a.validRuns, 0) /
+        costAggs.reduce((sum, a) => sum + a.validRuns, 0)
+      : null;
+
+    // Duration (weighted by run count)
+    const durAggs = perCb.filter((a) => a.avgDurationMs !== null && a.validRuns > 0);
+    const avgDurationMs = durAggs.length > 0
+      ? durAggs.reduce((sum, a) => sum + a.avgDurationMs! * a.validRuns, 0) /
+        durAggs.reduce((sum, a) => sum + a.validRuns, 0)
+      : null;
+
+    return {
+      conditionId: condId,
+      label: base?.label ?? condId,
+      subtitle: base?.subtitle ?? '',
+      validRuns,
+      avgRecall,
+      gtTotal: perCb.reduce((sum, a) => sum + (a.gtTotal ?? 0), 0) || null,
+      confirmedNovels: perCb.reduce((sum, a) => sum + a.confirmedNovels, 0),
+      confirmedNovelsFiltered: perCb.reduce((sum, a) => sum + a.confirmedNovelsFiltered, 0),
+      plausibleNovelsFiltered: perCb.reduce((sum, a) => sum + a.plausibleNovelsFiltered, 0),
+      fpRate: totalFindings > 0 ? totalFp / totalFindings : null,
+      consistency,
+      avgCost,
+      avgDurationMs,
+    };
+  });
+
+  // Metric bests for this filtered set
+  function bestHigher(getter: (a: CrossCodebaseAggregate) => number | null): string[] {
+    let bestVal = -Infinity;
+    let best: string[] = [];
+    for (const a of aggregates) {
+      const val = getter(a);
+      if (val === null) continue;
+      if (val > bestVal) { bestVal = val; best = [a.conditionId]; }
+      else if (val === bestVal) best.push(a.conditionId);
+    }
+    return best;
+  }
+
+  function bestLower(getter: (a: CrossCodebaseAggregate) => number | null): string[] {
+    let bestVal = Infinity;
+    let best: string[] = [];
+    for (const a of aggregates) {
+      const val = getter(a);
+      if (val === null) continue;
+      if (val < bestVal) { bestVal = val; best = [a.conditionId]; }
+      else if (val === bestVal) best.push(a.conditionId);
+    }
+    return best;
+  }
+
+  const gtTotalAll = filteredCbs.reduce((s, cb) => s + cb.gtTotal, 0);
+  const gtMissedByAllTotal = filteredCbs.reduce((s, cb) => s + cb.missedGt.length, 0);
+
+  return {
+    aggregates,
+    metricBests: {
+      recall: bestHigher((a) => a.avgRecall),
+      confirmedNovelsFiltered: bestHigher((a) => a.confirmedNovelsFiltered),
+      fpRate: bestLower((a) => a.fpRate),
+      consistency: bestHigher((a) => a.consistency),
+      avgCost: bestLower((a) => a.avgCost),
+      avgDuration: bestLower((a) => a.avgDurationMs),
+    },
+    codebaseIds: [...codebaseIds],
+    gtTotalAll,
+    gtMissedByAllTotal,
+    gtMissedByAllPercent: gtTotalAll > 0 ? Math.round((gtMissedByAllTotal / gtTotalAll) * 100) : 0,
+    totalExcludedByRiskCategory: filteredCbs.reduce((sum, cb) =>
+      sum + cb.validations.filter((v) =>
+        v.riskCategory && (v.verdict === 'confirmed' || v.verdict === 'plausible'),
+      ).length, 0),
   };
 }
 

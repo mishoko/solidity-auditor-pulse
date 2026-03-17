@@ -1,9 +1,13 @@
 /**
  * Shared LLM call utility for the classifier pipeline.
  *
- * Single place to spawn `claude -p`, parse JSON responses,
+ * Single place to call LLMs, parse JSON responses,
  * and validate with Zod. All LLM calls in the classifier
  * go through this module.
+ *
+ * Uses an injectable LLMProvider for testability:
+ *   - Production: CLIProvider (spawns `claude -p`)
+ *   - Tests: swap via setLLMProvider() with a fake returning canned responses
  */
 
 import { spawn } from 'node:child_process';
@@ -32,6 +36,99 @@ export class LLMError extends Error {
   }
 }
 
+// ─── LLM Provider interface ───
+
+/**
+ * Abstraction over the raw "prompt in → text out" LLM call.
+ *
+ * Production: CLIProvider (spawns `claude -p`).
+ * Tests: FakeLLMProvider returning canned responses.
+ *
+ * JSON parsing, Zod validation, and retry logic live OUTSIDE the provider —
+ * they are handled by callLLM/callLLMRaw.
+ */
+export interface LLMProvider {
+  call(prompt: string, model: string, timeout: number): Promise<string>;
+}
+
+// ─── CLI Provider (production default) ───
+
+/** Build a clean env object with CLAUDE_CODE* and CLAUDECODE vars stripped. */
+function cleanEnv(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => !key.startsWith('CLAUDE_CODE') && key !== 'CLAUDECODE',
+    ),
+  ) as Record<string, string>;
+}
+
+class CLIProvider implements LLMProvider {
+  call(prompt: string, model: string, timeout: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const args = ['-p', '--output-format', 'text', '--model', model, '--max-turns', '1'];
+
+      const child = spawn('claude', args, {
+        env: cleanEnv(),
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      child.stdin.write(prompt);
+      child.stdin.end();
+
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString();
+      });
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+
+      const timer = setTimeout(() => {
+        child.kill('SIGTERM');
+        reject(new LLMError('timeout', `LLM call timed out (${timeout / 1000}s)`));
+      }, timeout);
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        reject(new LLMError('spawn', `Failed to spawn claude: ${err.message}`));
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          reject(
+            new LLMError('exit', `claude exited with code ${code}: ${stderr.slice(0, 300)}`),
+          );
+        } else {
+          const trimmed = stdout.trim();
+          if (trimmed.length === 0) {
+            reject(
+              new LLMError('exit', `claude returned empty stdout (exit=0, stderr=${stderr.length}B). CLI flaky response — will retry.`),
+            );
+          } else {
+            resolve(trimmed);
+          }
+        }
+      });
+    });
+  }
+}
+
+// ─── Provider management ───
+
+let activeProvider: LLMProvider = new CLIProvider();
+
+/** Swap the LLM provider. Used by tests to inject a fake. */
+export function setLLMProvider(provider: LLMProvider): void {
+  activeProvider = provider;
+}
+
+/** Reset to the default CLI provider. Call in afterEach/afterAll in tests. */
+export function resetLLMProvider(): void {
+  activeProvider = new CLIProvider();
+}
+
 // ─── Options ───
 
 export interface LLMCallOptions<T> {
@@ -45,21 +142,10 @@ export interface LLMCallOptions<T> {
   retries?: number;
 }
 
-// ─── Environment ───
-
-/** Build a clean env object with CLAUDE_CODE* and CLAUDECODE vars stripped. */
-function cleanEnv(): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(process.env).filter(
-      ([key]) => !key.startsWith('CLAUDE_CODE') && key !== 'CLAUDECODE',
-    ),
-  ) as Record<string, string>;
-}
-
 // ─── Core ───
 
 /**
- * Call `claude -p` with a prompt and parse the JSON response.
+ * Call LLM with a prompt and parse the JSON response.
  *
  * @returns Validated response of type T.
  * @throws LLMError on timeout, non-zero exit, JSON parse failure, or schema validation failure.
@@ -70,7 +156,7 @@ export async function callLLM<T>(prompt: string, opts: LLMCallOptions<T>): Promi
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const raw = await spawnClaude(prompt, opts.model, opts.timeout);
+      const raw = await activeProvider.call(prompt, opts.model, opts.timeout);
       return parseAndValidate(raw, opts);
     } catch (err) {
       lastError = err as Error;
@@ -89,14 +175,14 @@ export async function callLLM<T>(prompt: string, opts: LLMCallOptions<T>): Promi
 }
 
 /**
- * Call `claude -p` and return raw text (no JSON parsing).
+ * Call LLM and return raw text (no JSON parsing).
  * Used for narrative generation where the output is markdown, not JSON.
  */
 export async function callLLMRaw(prompt: string, model: string, timeout: number): Promise<string> {
   // Retry once on empty response
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      return await spawnClaude(prompt, model, timeout);
+      return await activeProvider.call(prompt, model, timeout);
     } catch (err) {
       if (attempt < 2 && err instanceof LLMError && err.code === 'exit') {
         await delay(RETRY_DELAY_MS);
@@ -106,60 +192,6 @@ export async function callLLMRaw(prompt: string, model: string, timeout: number)
     }
   }
   throw new LLMError('exit', 'All retry attempts failed');
-}
-
-/**
- * Spawn `claude -p` and return raw stdout text.
- */
-function spawnClaude(prompt: string, model: string, timeout: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const args = ['-p', '--output-format', 'text', '--model', model, '--max-turns', '1'];
-
-    const child = spawn('claude', args, {
-      env: cleanEnv(),
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    child.stdin.write(prompt);
-    child.stdin.end();
-
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    const timer = setTimeout(() => {
-      child.kill('SIGTERM');
-      reject(new LLMError('timeout', `LLM call timed out (${timeout / 1000}s)`));
-    }, timeout);
-
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      reject(new LLMError('spawn', `Failed to spawn claude: ${err.message}`));
-    });
-
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        reject(
-          new LLMError('exit', `claude exited with code ${code}: ${stderr.slice(0, 300)}`),
-        );
-      } else {
-        const trimmed = stdout.trim();
-        if (trimmed.length === 0) {
-          reject(
-            new LLMError('exit', `claude returned empty stdout (exit=0, stderr=${stderr.length}B). CLI flaky response — will retry.`),
-          );
-        } else {
-          resolve(trimmed);
-        }
-      }
-    });
-  });
 }
 
 /**

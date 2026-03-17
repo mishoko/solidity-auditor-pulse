@@ -1,0 +1,47 @@
+{
+  "runId": "run-bare-1",
+  "codebaseId": "test-codebase",
+  "conditionId": "bare_audit",
+  "classifiedAt": "2026-01-01T15:00:00.000Z",
+  "classifierModel": "claude-sonnet-4-20250514",
+  "gtHash": "abc123",
+  "stdoutHash": "jkl012",
+  "classifications": [
+    {
+      "findingIndex": 1,
+      "findingTitle": "Reentrancy in Vault.withdraw",
+      "category": "matched",
+      "matchedGtId": "H-01",
+      "agreement": "1/1",
+      "reasoning": "Matches GT H-01",
+      "votes": [{ "category": "matched", "matchedGtId": "H-01", "confidence": "high", "reasoning": "Matches" }]
+    },
+    {
+      "findingIndex": 2,
+      "findingTitle": "Missing Access Control on TokenSale.setPrice",
+      "category": "matched",
+      "matchedGtId": "H-02",
+      "agreement": "1/1",
+      "reasoning": "Matches GT H-02",
+      "votes": [{ "category": "matched", "matchedGtId": "H-02", "confidence": "high", "reasoning": "Matches" }]
+    },
+    {
+      "findingIndex": 3,
+      "findingTitle": "Oracle Price Manipulation via Flash Loan",
+      "category": "novel",
+      "matchedGtId": null,
+      "agreement": "1/1",
+      "reasoning": "Novel finding",
+      "votes": [{ "category": "novel", "matchedGtId": null, "confidence": "medium", "reasoning": "Novel" }]
+    },
+    {
+      "findingIndex": 4,
+      "findingTitle": "Floating Pragma",
+      "category": "fp",
+      "matchedGtId": null,
+      "agreement": "1/1",
+      "reasoning": "Not a real vulnerability",
+      "votes": [{ "category": "fp", "matchedGtId": null, "confidence": "high", "reasoning": "FP" }]
+    }
+  ]
+}

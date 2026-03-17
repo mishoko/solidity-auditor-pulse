@@ -1,0 +1,17 @@
+## Security Findings
+
+### H-1: Reentrancy in Vault.withdraw
+
+The withdraw function does not follow checks-effects-interactions.
+
+### H-2: Flash Loan Attack on PriceOracle.getPrice
+
+Oracle can be manipulated with flash loans.
+
+### M-1: Missing Input Validation in Bridge.deposit
+
+No zero-address check on recipient parameter.
+
+### L-1: Floating Pragma in All Contracts
+
+Solidity version not pinned.

@@ -1,0 +1,8 @@
+{
+  "codebaseId": "test-codebase",
+  "findings": [
+    { "id": "H-01", "title": "Reentrancy in withdraw", "severity": "high", "description": "Reentrancy in withdraw" },
+    { "id": "H-02", "title": "Missing access control on setPrice", "severity": "high", "description": "Missing access control on setPrice" },
+    { "id": "M-01", "title": "Unchecked return value", "severity": "medium", "description": "Unchecked return value" }
+  ]
+}

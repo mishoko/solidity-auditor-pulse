@@ -19,6 +19,7 @@ import type {
   ValidationResult,
 } from '../shared/types.js';
 import { callLLM, parallelMap, LLMError } from './llm.js';
+import { hashContent } from '../shared/util/hash.js';
 import * as log from '../shared/util/logger.js';
 
 // ─── Config ───
@@ -222,19 +223,22 @@ export async function validateClusters(
   const clusterPath = path.join(resultsDir, `clusters-${codebaseId}.json`);
   if (!fs.existsSync(clusterPath)) return null;
 
-  const clusters: ClusterResult = JSON.parse(
-    fs.readFileSync(clusterPath, 'utf8'),
-  );
+  const clusterContent = fs.readFileSync(clusterPath, 'utf8');
+  const clusters: ClusterResult = JSON.parse(clusterContent);
   if (clusters.clusters.length === 0) return null;
 
-  // Check staleness
+  // Content-based cache: hash of cluster file + validator model
+  const clusterHash = hashContent(clusterContent + VALIDATOR_MODEL);
   const valPath = path.join(resultsDir, `validations-${codebaseId}.json`);
   if (!options.force && fs.existsSync(valPath)) {
-    const valMtime = fs.statSync(valPath).mtimeMs;
-    const clusterMtime = fs.statSync(clusterPath).mtimeMs;
-    if (valMtime > clusterMtime) {
-      log.info(`  ${codebaseId}: validations up to date — skipping`);
-      return JSON.parse(fs.readFileSync(valPath, 'utf8'));
+    try {
+      const existing: ValidationResult = JSON.parse(fs.readFileSync(valPath, 'utf8'));
+      if (existing.clusterHash === clusterHash && existing.validatorModel === VALIDATOR_MODEL) {
+        log.info(`  ${codebaseId}: validations up to date — skipping`);
+        return existing;
+      }
+    } catch {
+      // Corrupted file — re-validate
     }
   }
 
@@ -314,6 +318,7 @@ export async function validateClusters(
     codebaseId,
     validatedAt: new Date().toISOString(),
     validatorModel: VALIDATOR_MODEL,
+    clusterHash,
     validations,
     confirmed: validations.filter((v) => v.verdict === 'confirmed').length,
     plausible: validations.filter((v) => v.verdict === 'plausible').length,

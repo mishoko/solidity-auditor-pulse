@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","slash_commands":["solidity-auditor"],"tools":["Read","Write","Bash","Skill"],"model":"claude-sonnet-4-20250514"}
+{"type":"result","stop_reason":"end_turn","num_turns":1,"duration_ms":10000}

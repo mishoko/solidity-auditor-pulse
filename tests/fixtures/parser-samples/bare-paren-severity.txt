@@ -1,0 +1,13 @@
+## Findings
+
+### 1. Reentrancy in Vault.withdraw (Critical)
+
+Classic reentrancy.
+
+### 2. Front-Running on TokenSale.buy (High)
+
+MEV bots can front-run user purchases.
+
+### 3. Delegatecall Proxy Issue (Medium)
+
+Storage layout mismatch.

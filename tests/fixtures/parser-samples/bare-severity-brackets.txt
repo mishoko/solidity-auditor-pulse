@@ -1,0 +1,24 @@
+## Security Audit Report
+
+### [CRITICAL] Reentrancy in Vault.withdraw
+
+The withdraw function does not follow checks-effects-interactions.
+
+### [HIGH] Missing Access Control on TokenSale.setPrice — TokenSale.sol:14-21
+
+Anyone can call setPrice.
+
+### [MEDIUM] Unchecked Return Value in Bridge.transfer
+
+The return value of the external call is not checked.
+
+### [LOW] Gas Optimization in Storage.update
+
+Using storage when memory would suffice.
+
+| Severity | Count |
+|---|---|
+| Critical | 1 |
+| High | 1 |
+| Medium | 1 |
+| Low | 1 |

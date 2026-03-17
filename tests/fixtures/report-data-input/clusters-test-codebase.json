@@ -1,0 +1,43 @@
+{
+  "codebaseId": "test-codebase",
+  "clusteredAt": "2026-01-01T16:00:00.000Z",
+  "clusterModel": "claude-sonnet-4-20250514",
+  "clusters": [
+    {
+      "clusterId": "novel-flash-loan",
+      "title": "Flash Loan Price Oracle Manipulation",
+      "reasoning": "Multiple conditions found flash loan attack vectors",
+      "severity": "high",
+      "foundIn": [
+        { "runId": "run-skill-1", "conditionId": "skill_v2", "findingIndex": 3, "findingTitle": "Flash Loan Attack on PriceOracle.getPrice" },
+        { "runId": "run-bare-1", "conditionId": "bare_audit", "findingIndex": 3, "findingTitle": "Oracle Price Manipulation via Flash Loan" }
+      ],
+      "conditionsCaught": ["skill_v2", "bare_audit"],
+      "relevantFiles": ["src/PriceOracle.sol"]
+    },
+    {
+      "clusterId": "novel-unchecked-return",
+      "title": "Unchecked External Call Return Value",
+      "reasoning": "Bridge.transfer return value not checked",
+      "severity": "medium",
+      "foundIn": [
+        { "runId": "run-skill-2", "conditionId": "skill_v2", "findingIndex": 2, "findingTitle": "Unchecked Return Value in Bridge.transfer" }
+      ],
+      "conditionsCaught": ["skill_v2"],
+      "relevantFiles": ["src/Bridge.sol"]
+    },
+    {
+      "clusterId": "novel-centralization",
+      "title": "Admin Function Centralization Risk",
+      "reasoning": "Governor can drain via execute",
+      "severity": "medium",
+      "foundIn": [
+        { "runId": "run-skill-2", "conditionId": "skill_v2", "findingIndex": 3, "findingTitle": "Centralization Risk in Admin Functions" }
+      ],
+      "conditionsCaught": ["skill_v2"],
+      "relevantFiles": ["src/Governor.sol"]
+    }
+  ],
+  "totalFindings": 5,
+  "uniqueBugs": 3
+}

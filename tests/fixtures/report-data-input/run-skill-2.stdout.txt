@@ -1,0 +1,24 @@
+🔐 Security Review
+
+[95] **1. Reentrancy in Vault.withdraw allows drain**
+`Vault.withdraw` · Confidence: 95
+
+The withdraw function does not follow checks-effects-interactions pattern. An attacker can re-enter the contract and drain all funds. This is a critical vulnerability. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt.
+
+[70] **2. Unchecked Return Value in Bridge.transfer**
+`Bridge.transfer` · Confidence: 70
+
+The return value of the external call is not checked. This could lead to silent failures and loss of funds. Additional text for padding purposes here.
+
+[50] **3. Centralization Risk in Admin Functions**
+`Governor.execute` · Confidence: 50
+
+Admin can drain funds through execute function. This is a centralization risk finding. More padding text to ensure valid skill run.
+
+## Findings List
+
+| # | Confidence | Title |
+|---|---|---|
+| 1 | [95] | Reentrancy in Vault.withdraw allows drain |
+| 2 | [70] | Unchecked Return Value in Bridge.transfer |
+| 3 | [50] | Centralization Risk in Admin Functions |

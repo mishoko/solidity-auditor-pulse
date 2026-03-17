@@ -1,0 +1,243 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`parseOutput — bare bracketed numbered > matches snapshot 1`] = `
+[
+  {
+    "confidence": null,
+    "index": 1,
+    "location": "Vault.withdraw",
+    "rootCause": "vault::withdraw::reentrancy",
+    "severity": "HIGH",
+    "title": "Reentrancy in Vault.withdraw allows fund drain",
+    "vulnType": "reentrancy",
+  },
+  {
+    "confidence": null,
+    "index": 2,
+    "location": "Bridge.transfer",
+    "rootCause": "bridge::transfer::unchecked-return",
+    "severity": "MEDIUM",
+    "title": "Unchecked Return Value in Bridge.transfer",
+    "vulnType": "unchecked-return",
+  },
+]
+`;
+
+exports[`parseOutput — bare numbered prefix > matches snapshot 1`] = `
+[
+  {
+    "confidence": null,
+    "index": 1,
+    "location": "Vault.withdraw",
+    "rootCause": "vault::withdraw::reentrancy",
+    "severity": "HIGH",
+    "title": "Reentrancy in Vault.withdraw",
+    "vulnType": "reentrancy",
+  },
+  {
+    "confidence": null,
+    "index": 2,
+    "location": "PriceOracle.getPrice",
+    "rootCause": "priceoracle::getprice::flash-loan",
+    "severity": "HIGH",
+    "title": "Flash Loan Attack on PriceOracle.getPrice",
+    "vulnType": "flash-loan",
+  },
+  {
+    "confidence": null,
+    "index": 3,
+    "location": "Bridge.deposit",
+    "rootCause": "bridge::deposit::other",
+    "severity": "MEDIUM",
+    "title": "Missing Input Validation in Bridge.deposit",
+    "vulnType": "other",
+  },
+  {
+    "confidence": null,
+    "index": 4,
+    "location": null,
+    "rootCause": "unknown::floating-pragma-all-contracts",
+    "severity": "LOW",
+    "title": "Floating Pragma in All Contracts",
+    "vulnType": "other",
+  },
+]
+`;
+
+exports[`parseOutput — bare parenthesized severity > matches snapshot 1`] = `
+[
+  {
+    "confidence": null,
+    "index": 1,
+    "location": "Vault.withdraw",
+    "rootCause": "vault::withdraw::reentrancy",
+    "severity": "CRITICAL",
+    "title": "Reentrancy in Vault.withdraw",
+    "vulnType": "reentrancy",
+  },
+  {
+    "confidence": null,
+    "index": 2,
+    "location": "TokenSale.buy",
+    "rootCause": "tokensale::buy::frontrunning",
+    "severity": "HIGH",
+    "title": "Front-Running on TokenSale.buy",
+    "vulnType": "frontrunning",
+  },
+  {
+    "confidence": null,
+    "index": 3,
+    "location": null,
+    "rootCause": "unknown::delegatecall-proxy-issue",
+    "severity": "MEDIUM",
+    "title": "Delegatecall Proxy Issue",
+    "vulnType": "delegatecall",
+  },
+]
+`;
+
+exports[`parseOutput — bare section numbered > matches snapshot 1`] = `
+[
+  {
+    "confidence": null,
+    "index": 1,
+    "location": "Vault.withdraw",
+    "rootCause": "vault::withdraw::reentrancy",
+    "severity": "HIGH",
+    "title": "Reentrancy in Vault.withdraw",
+    "vulnType": "reentrancy",
+  },
+  {
+    "confidence": null,
+    "index": 2,
+    "location": null,
+    "rootCause": "unknown::flash-loan-price-manipulation",
+    "severity": "HIGH",
+    "title": "Flash Loan Price Manipulation",
+    "vulnType": "flash-loan",
+  },
+  {
+    "confidence": null,
+    "index": 3,
+    "location": "Router.swap",
+    "rootCause": "router::swap::other",
+    "severity": "MEDIUM",
+    "title": "Missing Slippage Check in Router.swap",
+    "vulnType": "other",
+  },
+  {
+    "confidence": null,
+    "index": 4,
+    "location": null,
+    "rootCause": "unknown::floating-pragma",
+    "severity": "LOW",
+    "title": "Floating Pragma",
+    "vulnType": "other",
+  },
+]
+`;
+
+exports[`parseOutput — bare severity brackets > matches snapshot 1`] = `
+[
+  {
+    "confidence": null,
+    "index": 1,
+    "location": "Vault.withdraw",
+    "rootCause": "vault::withdraw::reentrancy",
+    "severity": "CRITICAL",
+    "title": "Reentrancy in Vault.withdraw",
+    "vulnType": "reentrancy",
+  },
+  {
+    "confidence": null,
+    "index": 2,
+    "location": "TokenSale.setPrice",
+    "rootCause": "tokensale::setprice::access-control",
+    "severity": "HIGH",
+    "title": "Missing Access Control on TokenSale.setPrice",
+    "vulnType": "access-control",
+  },
+  {
+    "confidence": null,
+    "index": 3,
+    "location": "Bridge.transfer",
+    "rootCause": "bridge::transfer::unchecked-return",
+    "severity": "MEDIUM",
+    "title": "Unchecked Return Value in Bridge.transfer",
+    "vulnType": "unchecked-return",
+  },
+  {
+    "confidence": null,
+    "index": 4,
+    "location": "Storage.update",
+    "rootCause": "storage::update::other",
+    "severity": "LOW",
+    "title": "Gas Optimization in Storage.update",
+    "vulnType": "other",
+  },
+]
+`;
+
+exports[`parseOutput — bare trailing severity > matches snapshot 1`] = `
+[
+  {
+    "confidence": null,
+    "index": 1,
+    "location": "Vault.withdraw",
+    "rootCause": "vault::withdraw::reentrancy",
+    "severity": "CRITICAL",
+    "title": "Reentrancy in Vault.withdraw",
+    "vulnType": "reentrancy",
+  },
+  {
+    "confidence": null,
+    "index": 2,
+    "location": null,
+    "rootCause": "unknown::missing-access-control-setprice",
+    "severity": "HIGH",
+    "title": "Missing Access Control on setPrice",
+    "vulnType": "access-control",
+  },
+  {
+    "confidence": null,
+    "index": 3,
+    "location": null,
+    "rootCause": "unknown::gas-optimization-opportunity",
+    "severity": "LOW",
+    "title": "Gas Optimization Opportunity",
+    "vulnType": "other",
+  },
+]
+`;
+
+exports[`parseOutput — skill format > matches snapshot 1`] = `
+[
+  {
+    "confidence": 95,
+    "index": 1,
+    "location": "Vault.withdraw",
+    "rootCause": "vault::withdraw::reentrancy",
+    "severity": null,
+    "title": "Reentrancy in Vault.withdraw allows drain",
+    "vulnType": "reentrancy",
+  },
+  {
+    "confidence": 80,
+    "index": 2,
+    "location": "TokenSale.setPrice",
+    "rootCause": "tokensale::setprice::access-control",
+    "severity": null,
+    "title": "Missing Access Control on TokenSale.setPrice",
+    "vulnType": "access-control",
+  },
+  {
+    "confidence": 60,
+    "index": 3,
+    "location": "PriceOracle.getPrice",
+    "rootCause": "priceoracle::getprice::flash-loan",
+    "severity": null,
+    "title": "Oracle Manipulation via Flash Loan",
+    "vulnType": "flash-loan",
+  },
+]
+`;

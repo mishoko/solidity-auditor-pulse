@@ -1,0 +1,30 @@
+🔐 Security Review
+
+[95] **1. Reentrancy in Vault.withdraw allows drain**
+`Vault.withdraw` · Confidence: 95
+
+The withdraw function does not follow checks-effects-interactions pattern. An attacker can re-enter the contract and drain all funds. This is a critical vulnerability that needs immediate attention. The function should use a reentrancy guard or follow CEI pattern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+
+[80] **2. Missing Access Control on TokenSale.setPrice**
+`TokenSale.setPrice` · Confidence: 80
+
+Anyone can call setPrice to manipulate the token price. This lacks proper onlyOwner modifier. The function should be restricted to authorized callers only. Additional padding text to ensure sufficient length for valid skill run detection.
+
+[60] **3. Flash Loan Attack on PriceOracle.getPrice**
+`PriceOracle.getPrice` · Confidence: 60
+
+The oracle can be manipulated using a flash loan to skew the TWAP. This is a novel finding not in the ground truth. More text here to pad the output.
+
+[40] **4. Gas Optimization in Storage Pattern**
+`Storage.update` · Confidence: 40
+
+Using storage reads in a loop when the value could be cached in memory. This is a false positive as an audit finding.
+
+## Findings List
+
+| # | Confidence | Title |
+|---|---|---|
+| 1 | [95] | Reentrancy in Vault.withdraw allows drain |
+| 2 | [80] | Missing Access Control on TokenSale.setPrice |
+| 3 | [60] | Flash Loan Attack on PriceOracle.getPrice |
+| 4 | [40] | Gas Optimization in Storage Pattern |

@@ -1,0 +1,47 @@
+{
+  "runId": "run-skill-1",
+  "codebaseId": "test-codebase",
+  "conditionId": "skill_v2",
+  "classifiedAt": "2026-01-01T13:00:00.000Z",
+  "classifierModel": "claude-sonnet-4-20250514",
+  "gtHash": "abc123",
+  "stdoutHash": "def456",
+  "classifications": [
+    {
+      "findingIndex": 1,
+      "findingTitle": "Reentrancy in Vault.withdraw allows drain",
+      "category": "matched",
+      "matchedGtId": "H-01",
+      "agreement": "1/1",
+      "reasoning": "Matches GT H-01",
+      "votes": [{ "category": "matched", "matchedGtId": "H-01", "confidence": "high", "reasoning": "Matches" }]
+    },
+    {
+      "findingIndex": 2,
+      "findingTitle": "Missing Access Control on TokenSale.setPrice",
+      "category": "matched",
+      "matchedGtId": "H-02",
+      "agreement": "1/1",
+      "reasoning": "Matches GT H-02",
+      "votes": [{ "category": "matched", "matchedGtId": "H-02", "confidence": "high", "reasoning": "Matches" }]
+    },
+    {
+      "findingIndex": 3,
+      "findingTitle": "Flash Loan Attack on PriceOracle.getPrice",
+      "category": "novel",
+      "matchedGtId": null,
+      "agreement": "1/1",
+      "reasoning": "Novel finding",
+      "votes": [{ "category": "novel", "matchedGtId": null, "confidence": "medium", "reasoning": "Novel" }]
+    },
+    {
+      "findingIndex": 4,
+      "findingTitle": "Gas Optimization in Storage Pattern",
+      "category": "fp",
+      "matchedGtId": null,
+      "agreement": "1/1",
+      "reasoning": "Not a real vulnerability",
+      "votes": [{ "category": "fp", "matchedGtId": null, "confidence": "high", "reasoning": "FP" }]
+    }
+  ]
+}

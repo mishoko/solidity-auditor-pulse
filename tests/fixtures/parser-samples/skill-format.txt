@@ -1,0 +1,24 @@
+🔐 Security Review
+
+[95] **1. Reentrancy in Vault.withdraw allows drain**
+`Vault.withdraw` · Confidence: 95
+
+The withdraw function does not follow checks-effects-interactions pattern.
+
+[80] **2. Missing Access Control on TokenSale.setPrice**
+`TokenSale.setPrice` · Confidence: 80
+
+Anyone can call setPrice to manipulate the token price.
+
+[60] **3. Oracle Manipulation via Flash Loan**
+`PriceOracle.getPrice` · Confidence: 60
+
+The oracle can be manipulated using a flash loan to skew the TWAP.
+
+## Findings List
+
+| # | Confidence | Title |
+|---|---|---|
+| 1 | [95] | Reentrancy in Vault.withdraw allows drain |
+| 2 | [80] | Missing Access Control on TokenSale.setPrice |
+| 3 | [60] | Oracle Manipulation via Flash Loan |

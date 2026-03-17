@@ -1,0 +1,13 @@
+{
+  "runId": "run-skill-1",
+  "codebaseId": "test-codebase",
+  "conditionId": "skill_v2",
+  "iteration": 1,
+  "mode": "skill",
+  "timestampUtc": "2026-01-01T10:00:00.000Z",
+  "durationMs": 120000,
+  "exitCode": 0,
+  "timedOut": false,
+  "skillVersion": "v2",
+  "model": "claude-sonnet-4-20250514"
+}

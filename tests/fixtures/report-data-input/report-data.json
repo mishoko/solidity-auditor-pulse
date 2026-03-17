@@ -1,0 +1,361 @@
+{
+  "generatedAt": "2026-03-17T06:22:49.145Z",
+  "mode": "all",
+  "totalRuns": 3,
+  "validRuns": 3,
+  "invalidRuns": 0,
+  "codebaseIds": [
+    "test-codebase"
+  ],
+  "codebases": [
+    {
+      "codebaseId": "test-codebase",
+      "hasGt": true,
+      "gtTotal": 3,
+      "conditions": [
+        "skill_v2",
+        "bare_audit"
+      ],
+      "conditionLabels": [
+        "V2",
+        "Bare CC"
+      ],
+      "aggregates": [
+        {
+          "conditionId": "skill_v2",
+          "label": "V2",
+          "validRuns": 2,
+          "totalRuns": 2,
+          "avgRecall": 0.5,
+          "avgMatched": 1.5,
+          "gtTotal": 3,
+          "consistency": 0.5,
+          "avgFindingsCount": 3.5,
+          "totalFp": 1,
+          "avgFp": 0.5,
+          "totalFindings": 7,
+          "fpRate": 0.14285714285714285,
+          "avgUncertain": 0,
+          "confirmedNovels": 2,
+          "confirmedNovelsFiltered": 1,
+          "plausibleNovels": 1,
+          "plausibleNovelsFiltered": 1,
+          "uniqueBugsFound": 3,
+          "avgCost": null,
+          "avgDurationMs": 125000
+        },
+        {
+          "conditionId": "bare_audit",
+          "label": "Bare CC",
+          "validRuns": 1,
+          "totalRuns": 1,
+          "avgRecall": 0.6666666666666666,
+          "avgMatched": 2,
+          "gtTotal": 3,
+          "consistency": null,
+          "avgFindingsCount": 4,
+          "totalFp": 1,
+          "avgFp": 1,
+          "totalFindings": 4,
+          "fpRate": 0.25,
+          "avgUncertain": 0,
+          "confirmedNovels": 1,
+          "confirmedNovelsFiltered": 1,
+          "plausibleNovels": 0,
+          "plausibleNovelsFiltered": 0,
+          "uniqueBugsFound": 1,
+          "avgCost": null,
+          "avgDurationMs": 60000
+        }
+      ],
+      "runs": [
+        {
+          "runId": "run-skill-1",
+          "codebaseId": "test-codebase",
+          "conditionId": "skill_v2",
+          "iteration": 1,
+          "runNumber": 1,
+          "durationMs": 120000,
+          "costUsd": null,
+          "timedOut": false,
+          "findingsCount": 4,
+          "matched": 2,
+          "novel": 1,
+          "fp": 1,
+          "uncertain": 0,
+          "recall": 0.6666666666666666,
+          "precision": 0.6666666666666666,
+          "matchedGtIds": [
+            "H-01",
+            "H-02"
+          ]
+        },
+        {
+          "runId": "run-skill-2",
+          "codebaseId": "test-codebase",
+          "conditionId": "skill_v2",
+          "iteration": 2,
+          "runNumber": 2,
+          "durationMs": 130000,
+          "costUsd": null,
+          "timedOut": false,
+          "findingsCount": 3,
+          "matched": 1,
+          "novel": 2,
+          "fp": 0,
+          "uncertain": 0,
+          "recall": 0.3333333333333333,
+          "precision": 1,
+          "matchedGtIds": [
+            "H-01"
+          ]
+        },
+        {
+          "runId": "run-bare-1",
+          "codebaseId": "test-codebase",
+          "conditionId": "bare_audit",
+          "iteration": 1,
+          "runNumber": 1,
+          "durationMs": 60000,
+          "costUsd": null,
+          "timedOut": false,
+          "findingsCount": 4,
+          "matched": 2,
+          "novel": 1,
+          "fp": 1,
+          "uncertain": 0,
+          "recall": 0.6666666666666666,
+          "precision": 0.6666666666666666,
+          "matchedGtIds": [
+            "H-01",
+            "H-02"
+          ]
+        }
+      ],
+      "ledger": [
+        {
+          "title": "Reentrancy in withdraw",
+          "conditionCells": {
+            "skill_v2": "✓",
+            "bare_audit": "✓"
+          },
+          "status": "H-01",
+          "sortKey": 0,
+          "gtId": "H-01"
+        },
+        {
+          "title": "Missing access control on setPrice",
+          "conditionCells": {
+            "skill_v2": "✓#1",
+            "bare_audit": "✓"
+          },
+          "status": "H-02",
+          "sortKey": 0,
+          "gtId": "H-02"
+        },
+        {
+          "title": "Unchecked return value",
+          "conditionCells": {
+            "skill_v2": "-",
+            "bare_audit": "-"
+          },
+          "status": "M-01",
+          "sortKey": 0,
+          "gtId": "M-01"
+        },
+        {
+          "title": "Admin Function Centralization Risk",
+          "conditionCells": {
+            "skill_v2": "✓#2",
+            "bare_audit": "-"
+          },
+          "status": "confirmed",
+          "sortKey": 1
+        },
+        {
+          "title": "Flash Loan Price Oracle Manipulation",
+          "conditionCells": {
+            "skill_v2": "✓#1",
+            "bare_audit": "✓"
+          },
+          "status": "confirmed",
+          "sortKey": 1
+        },
+        {
+          "title": "Unchecked External Call Return Value",
+          "conditionCells": {
+            "skill_v2": "✓#2",
+            "bare_audit": "-"
+          },
+          "status": "plausible",
+          "sortKey": 2
+        },
+        {
+          "title": "Floating Pragma",
+          "conditionCells": {
+            "skill_v2": "-",
+            "bare_audit": "✓"
+          },
+          "status": "FP",
+          "sortKey": 4
+        },
+        {
+          "title": "Gas Optimization in Storage Pattern",
+          "conditionCells": {
+            "skill_v2": "✓#1",
+            "bare_audit": "-"
+          },
+          "status": "FP",
+          "sortKey": 4
+        }
+      ],
+      "missedGt": [
+        {
+          "id": "M-01",
+          "title": "Unchecked return value"
+        }
+      ],
+      "validations": [
+        {
+          "clusterId": "novel-flash-loan",
+          "title": "Flash Loan Price Oracle Manipulation",
+          "verdict": "confirmed",
+          "severity": "high",
+          "codeEvidence": "PriceOracle.getPrice() uses spot price without time-weighting",
+          "reasoning": "Oracle can be manipulated via flash loan, no TWAP protection"
+        },
+        {
+          "clusterId": "novel-unchecked-return",
+          "title": "Unchecked External Call Return Value",
+          "verdict": "plausible",
+          "severity": "medium",
+          "codeEvidence": "Bridge.transfer() ignores bool return from token.transfer()",
+          "reasoning": "Return value not checked but impact depends on external contract behavior"
+        },
+        {
+          "clusterId": "novel-centralization",
+          "title": "Admin Function Centralization Risk",
+          "verdict": "confirmed",
+          "severity": "medium",
+          "codeEvidence": "Governor.execute() has onlyGovernor modifier",
+          "reasoning": "Admin can drain funds but this is by design — governance controlled",
+          "riskCategory": "centralization-risk"
+        }
+      ],
+      "validationSummary": {
+        "confirmed": 2,
+        "plausible": 1,
+        "rejected": 0
+      },
+      "uniqueBugsTotal": 3,
+      "findingsMatrix": [
+        {
+          "gtId": "H-01",
+          "title": "Reentrancy in withdraw",
+          "cells": {
+            "run-skill-1": "1/1",
+            "run-skill-2": "1/1",
+            "run-bare-1": "1/1"
+          }
+        },
+        {
+          "gtId": "H-02",
+          "title": "Missing access control on setPrice",
+          "cells": {
+            "run-skill-1": "1/1",
+            "run-skill-2": "-",
+            "run-bare-1": "1/1"
+          }
+        },
+        {
+          "gtId": "M-01",
+          "title": "Unchecked return value",
+          "cells": {
+            "run-skill-1": "-",
+            "run-skill-2": "-",
+            "run-bare-1": "-"
+          }
+        }
+      ],
+      "consistency": [
+        {
+          "conditionId": "skill_v2",
+          "conditionLabel": "V2",
+          "totalRuns": 2,
+          "findings": [
+            {
+              "gtId": "H-01",
+              "gtTitle": "Reentrancy in withdraw",
+              "foundCount": 2,
+              "totalClassified": 2,
+              "label": "RELIABLE"
+            },
+            {
+              "gtId": "H-02",
+              "gtTitle": "Missing access control on setPrice",
+              "foundCount": 1,
+              "totalClassified": 2,
+              "label": "INCONSISTENT"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "gtMissedByAllTotal": 1,
+  "gtTotalAll": 3,
+  "gtMissedByAllPercent": 33,
+  "crossCodebaseAggregates": [
+    {
+      "conditionId": "skill_v2",
+      "label": "V2",
+      "subtitle": "5 agents + FP gate",
+      "validRuns": 2,
+      "avgRecall": 0.5,
+      "gtTotal": 3,
+      "confirmedNovels": 2,
+      "confirmedNovelsFiltered": 1,
+      "plausibleNovelsFiltered": 1,
+      "fpRate": 0.14285714285714285,
+      "consistency": 0.5,
+      "avgCost": null,
+      "avgDurationMs": 125000
+    },
+    {
+      "conditionId": "bare_audit",
+      "label": "Bare CC",
+      "subtitle": "No skill, audit prompt only",
+      "validRuns": 1,
+      "avgRecall": 0.6666666666666666,
+      "gtTotal": 3,
+      "confirmedNovels": 1,
+      "confirmedNovelsFiltered": 1,
+      "plausibleNovelsFiltered": 0,
+      "fpRate": 0.25,
+      "consistency": null,
+      "avgCost": null,
+      "avgDurationMs": 60000
+    }
+  ],
+  "totalExcludedByRiskCategory": 1,
+  "metricBests": {
+    "recall": [
+      "bare_audit"
+    ],
+    "confirmedNovelsFiltered": [
+      "skill_v2",
+      "bare_audit"
+    ],
+    "fpRate": [
+      "skill_v2"
+    ],
+    "consistency": [
+      "skill_v2"
+    ],
+    "avgCost": [],
+    "avgDuration": [
+      "bare_audit"
+    ]
+  },
+  "integrityViolations": []
+}

@@ -16,6 +16,8 @@
     "report": "tsc && node dist/reports/report-cli.js",
     "report:latest": "tsc && node dist/reports/report-cli.js --latest",
     "dashboard": "tsc && node dist/dashboard/render.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "setup": "mkdir -p results workspaces && touch results/.nosync workspaces/.nosync && echo 'Sync protection markers created.'"
   },
   "dependencies": {
@@ -24,6 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0"
   }
 }

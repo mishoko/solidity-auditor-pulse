@@ -1,0 +1,15 @@
+## Security Audit Report
+
+### [HIGH] Reentrancy in Vault.withdraw
+
+The withdraw function is vulnerable to reentrancy.
+An attacker can re-enter and drain funds.
+This is a critical issue.
+The function should use a reentrancy guard.
+Impact: loss of all deposited funds.
+Recommendation: add nonReentrant modifier.
+Severity: HIGH.
+
+### [MEDIUM] Missing Input Validation
+
+No zero-address check on recipient.

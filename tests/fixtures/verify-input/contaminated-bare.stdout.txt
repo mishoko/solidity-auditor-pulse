@@ -1,0 +1,11 @@
+## Security Audit Report
+
+### [HIGH] Reentrancy in Vault.withdraw
+
+Vulnerable to reentrancy.
+An attacker can drain funds.
+Add nonReentrant modifier.
+High severity issue.
+Critical impact on protocol.
+Loss of deposited funds.
+Recommendations follow.

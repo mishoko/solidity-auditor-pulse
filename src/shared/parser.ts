@@ -12,7 +12,7 @@
  *     decoupled from display root cause.
  */
 
-import { spawn } from 'node:child_process';
+import { z } from 'zod';
 
 export interface ParsedFinding {
   /** Sequential number in the report */
@@ -530,23 +530,30 @@ function parseBareFormat(lines: string[]): ParseResult {
 const RECOVERY_MODEL = process.env.RECOVERY_PARSER_MODEL || 'claude-sonnet-4-20250514';
 const RECOVERY_TIMEOUT = parseInt(process.env.RECOVERY_PARSER_TIMEOUT_MS || '') || 60_000;
 
-interface RecoveredRaw {
-  title: string;
-  severity: string | null;
-  location: string | null;
-  vulnerabilityType: string;
-  description: string;
-}
+const RecoveredFindingSchema = z.object({
+  title: z.string(),
+  severity: z.string().nullable(),
+  location: z.string().nullable(),
+  vulnerabilityType: z.string(),
+  description: z.string(),
+});
+
+const RecoveredArraySchema = z.array(RecoveredFindingSchema);
 
 /**
  * Use an LLM call to extract structured findings from text blocks
  * that the regex parser could not handle.
+ *
+ * Uses the shared LLMProvider (callLLM) — testable with FakeLLMProvider.
  */
 export async function recoverUnmatchedFindings(
   unmatchedBlocks: string[],
   startIndex: number,
 ): Promise<ParsedFinding[]> {
   if (unmatchedBlocks.length === 0) return [];
+
+  // Lazy import to avoid circular dependency (parser is used by classify, which uses llm)
+  const { callLLM } = await import('../classifier/llm.js');
 
   const blocksText = unmatchedBlocks.map((b, i) => `[Block ${i + 1}]\n${b}`).join('\n\n');
 
@@ -563,58 +570,29 @@ For each finding, return a JSON object with:
 
 Respond with ONLY a JSON array (no other text). If a block is not actually a vulnerability finding, skip it.`;
 
-  return new Promise((resolve) => {
-    const args = ['-p', '--output-format', 'text', '--model', RECOVERY_MODEL, '--max-turns', '1'];
-
-    const env = Object.fromEntries(
-      Object.entries(process.env).filter(([key]) =>
-        !key.startsWith('CLAUDE_CODE') && key !== 'CLAUDECODE'
-      )
-    );
-
-    const child = spawn('claude', args, {
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
+  try {
+    const raw = await callLLM(prompt, {
+      model: RECOVERY_MODEL,
+      timeout: RECOVERY_TIMEOUT,
+      schema: RecoveredArraySchema,
+      jsonShape: 'array',
+      retries: 1,
     });
 
-    child.stdin.write(prompt);
-    child.stdin.end();
-
-    let stdout = '';
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
-
-    const timer = setTimeout(() => {
-      child.kill('SIGTERM');
-      resolve([]);
-    }, RECOVERY_TIMEOUT);
-
-    child.on('error', () => { clearTimeout(timer); resolve([]); });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) { resolve([]); return; }
-
-      const jsonMatch = stdout.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) { resolve([]); return; }
-
-      try {
-        const raw: RecoveredRaw[] = JSON.parse(jsonMatch[0]);
-        const findings: ParsedFinding[] = raw.map((r, i) => {
-          const location = r.location || 'Unknown';
-          return {
-            index: startIndex + i,
-            title: r.title,
-            confidence: null,
-            severity: r.severity || null,
-            location,
-            rootCause: `${location}::${(r.vulnerabilityType || 'unknown').toLowerCase().replace(/\s+/g, '-')}`,
-            vulnType: r.vulnerabilityType || 'unknown',
-            recovered: true,
-          };
-        });
-        resolve(findings);
-      } catch {
-        resolve([]);
-      }
+    return raw.map((r, i) => {
+      const location = r.location || 'Unknown';
+      return {
+        index: startIndex + i,
+        title: r.title,
+        confidence: null,
+        severity: r.severity || null,
+        location,
+        rootCause: `${location}::${(r.vulnerabilityType || 'unknown').toLowerCase().replace(/\s+/g, '-')}`,
+        vulnType: r.vulnerabilityType || 'unknown',
+        recovered: true,
+      };
     });
-  });
+  } catch {
+    return [];
+  }
 }

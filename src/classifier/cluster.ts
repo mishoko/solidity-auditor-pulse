@@ -21,6 +21,7 @@ import type {
   ClusterResult,
 } from '../shared/types.js';
 import { callLLM, LLMError } from './llm.js';
+import { hashContent } from '../shared/util/hash.js';
 import * as log from '../shared/util/logger.js';
 
 // ─── Config ───
@@ -202,6 +203,24 @@ export async function clusterFindings(
 
   if (inputs.length === 0) return null;
 
+  // Content-based cache key: hash of inputs + model + scoping option
+  const inputHash = hashContent(
+    JSON.stringify(inputs) + CLUSTER_MODEL + String(!!options.scopeFiles),
+  );
+
+  // Cache check: content hash + model must match
+  if (!options.force && fs.existsSync(outPath)) {
+    try {
+      const existing: ClusterResult = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+      if (existing.inputHash === inputHash && existing.clusterModel === CLUSTER_MODEL) {
+        log.info(`  ${codebaseId}: clusters up to date — skipping`);
+        return existing;
+      }
+    } catch {
+      // Corrupted file — re-cluster
+    }
+  }
+
   // Resolve file list for scoping (if enabled)
   const solFiles = options.scopeFiles ? getSolFileList(codebaseId) : undefined;
   if (solFiles) {
@@ -215,6 +234,7 @@ export async function clusterFindings(
       codebaseId,
       clusteredAt: new Date().toISOString(),
       clusterModel: CLUSTER_MODEL,
+      inputHash,
       totalFindings: 1,
       uniqueBugs: 1,
       clusters: [
@@ -232,7 +252,7 @@ export async function clusterFindings(
             },
           ],
           conditionsCaught: [f.conditionId],
-          relevantFiles: solFiles, // single finding → all files as scope
+          // Don't assign all files — validator falls back to scope.txt if relevantFiles absent
         },
       ],
     };
@@ -342,6 +362,7 @@ export async function clusterFindings(
     codebaseId,
     clusteredAt: new Date().toISOString(),
     clusterModel: CLUSTER_MODEL,
+    inputHash,
     totalFindings: inputs.length,
     uniqueBugs: clusters.length,
     clusters,
@@ -447,38 +468,10 @@ export async function clusterAllCodebases(
     }
   }
 
-  // Check staleness: skip if cluster file is newer than all classification files
+  // Cache is now handled inside clusterFindings() via content hashing.
+  // No mtime checks needed here — clusterFindings compares inputHash + model.
+
   for (const codebaseId of allCodebases) {
-    const clusterPath = path.join(resultsDir, `clusters-${codebaseId}.json`);
-
-    if (!options.force && fs.existsSync(clusterPath)) {
-      try {
-        const clusterMtime = fs.statSync(clusterPath).mtimeMs;
-        const classFiles = fs
-          .readdirSync(resultsDir)
-          .filter((f) => f.endsWith('.classifications.json'));
-        const newestClassMtime = Math.max(
-          ...classFiles.map((f) => {
-            try {
-              return fs.statSync(path.join(resultsDir, f)).mtimeMs;
-            } catch {
-              return 0;
-            }
-          }),
-          0,
-        );
-
-        if (clusterMtime > newestClassMtime || newestClassMtime === 0) {
-          log.info(`  ${codebaseId}: clusters up to date — skipping`);
-          const existing = JSON.parse(fs.readFileSync(clusterPath, 'utf8'));
-          results.set(codebaseId, existing);
-          continue;
-        }
-      } catch {
-        // Fall through to re-cluster
-      }
-    }
-
     // Check if GT exists
     const gtPath = path.resolve(process.cwd(), 'ground_truth', `${codebaseId}.json`);
     const hasGt = fs.existsSync(gtPath);

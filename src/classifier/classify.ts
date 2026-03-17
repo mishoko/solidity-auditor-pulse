@@ -15,7 +15,6 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as crypto from 'node:crypto';
 import { z } from 'zod';
 import { parseOutput, type ParsedFinding } from '../shared/parser.js';
 import type {
@@ -27,6 +26,7 @@ import type {
   RunClassification,
 } from '../shared/types.js';
 import { callLLM, parallelMap, LLMError } from './llm.js';
+import { hashContent } from '../shared/util/hash.js';
 import * as log from '../shared/util/logger.js';
 
 // ─── Config ───
@@ -53,10 +53,6 @@ export interface ClassifyOptions {
 }
 
 // ─── Utilities ───
-
-function hashContent(content: string): string {
-  return crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
-}
 
 function loadGroundTruth(codebaseId: string): GroundTruth | null {
   const gtPath = path.resolve(process.cwd(), 'ground_truth', `${codebaseId}.json`);
@@ -209,20 +205,15 @@ async function castVote(
 // ─── Majority vote logic ───
 
 /**
- * Compute the majority decision from N votes.
- *
- * A "vote key" is category + matchedGtId (for matched findings).
- * With 1 vote: always uses that vote (agreement = '1/1').
- * With 3 votes: 3/3 or 2/3 = majority, else uncertain.
- */
-/**
  * Compute the majority decision from votes (nulls = failed votes, excluded).
  *
  * With 1 successful vote: uses that vote directly.
  * With 2+ successful votes: majority wins. No majority → uncertain.
  * With 0 successful votes: uncertain (all votes failed).
+ *
+ * Exported for testing — not part of the public API.
  */
-function computeMajority(rawVotes: (ClassificationVote | null)[]): FindingClassification & { _agreement: number } {
+export function computeMajority(rawVotes: (ClassificationVote | null)[]): FindingClassification & { _agreement: number } {
   // Filter out failed votes
   const votes = rawVotes.filter((v): v is ClassificationVote => v !== null);
   const failedCount = rawVotes.length - votes.length;
@@ -297,8 +288,7 @@ function computeMajority(rawVotes: (ClassificationVote | null)[]): FindingClassi
   // Get the representative vote
   const majorityIdx = voteKeys.findIndex((k) => k === majorityKey);
   const representative = votes[majorityIdx]!;
-  const agreement: '3/3' | '2/3' =
-    majorityCount === rawVotes.length ? '3/3' : '2/3';
+  const agreement = `${majorityCount}/${rawVotes.length}`;
 
   return {
     findingIndex: 0,
@@ -382,6 +372,7 @@ async function classifyRun(
       gtHash,
       stdoutHash,
       promptHash: PROMPT_HASH,
+      votesPerFinding: VOTES_PER_FINDING,
       classifications: [],
     };
     fs.writeFileSync(classPath, JSON.stringify(emptyResult, null, 2));
@@ -456,8 +447,7 @@ async function classifyRun(
         // Demote existing
         existing.category = 'uncertain';
         existing.matchedGtId = null;
-        existing.agreement = existing.agreement; // keep original agreement info
-        existing.reasoning = `Duplicate GT match for ${cls.matchedGtId} — demoted. ${existing.reasoning}`;
+        existing.reasoning = `Duplicate GT match for ${cls.matchedGtId} — demoted (${existing.agreement}). ${existing.reasoning}`;
         log.warn(`    Dedup: #${existing.findingIndex} demoted (dup ${cls.matchedGtId})`);
         gtWinners.set(cls.matchedGtId, i);
       } else {
@@ -484,6 +474,7 @@ async function classifyRun(
     gtHash,
     stdoutHash,
     promptHash: PROMPT_HASH,
+    votesPerFinding: VOTES_PER_FINDING,
     classifications: finalClassifications,
   };
 

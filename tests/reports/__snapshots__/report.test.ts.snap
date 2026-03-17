@@ -1,0 +1,120 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`report generation > generates report via generateReport() 1`] = `
+"# Benchmark Report
+
+> Generated: DATE | All runs
+
+## Comparison — test-codebase
+
+| Metric | V2 | Bare CC |
+|--------|---|---|
+| Recall (GT) | 1.5/3 (50%) | 2/3 (67%) |
+| Consistency | 0.50 | - |
+| Novel confirmed | 1 | 1 |
+| ↳ centralization/informational | +1 excluded | - |
+| Conditional novel | 1 | 0 |
+| Total findings | 3.5 | 4 |
+| Unique bugs found | 3 | 1 |
+| False positives | 1 | 1 |
+| Uncertain | 0 | 0 |
+| Avg cost/run | - | - |
+| Avg duration | 2m5s | 1m0s |
+
+> **3 unique bugs** across all conditions (deduplicated by root cause).
+
+## Missed GT Findings — test-codebase
+
+1 of 3 ground truth findings were missed by all conditions:
+
+| GT ID | Finding |
+|-------|---------|
+| M-01 | Unchecked return value |
+
+## Findings Ledger — test-codebase
+
+| # | Finding | V2 | Bare CC | Status |
+|---|---------|---|---|--------|
+| 1 | Reentrancy in withdraw | ✓ | ✓ | H-01 |
+| 2 | Missing access control on setPrice | ✓#1 | ✓ | H-02 |
+| 3 | Unchecked return value | - | - | M-01 |
+| 4 | Admin Function Centralization Risk | ✓#2 | - | confirmed |
+| 5 | Flash Loan Price Oracle Manipulation | ✓#1 | ✓ | confirmed |
+| 6 | Unchecked External Call Return Value | ✓#2 | - | plausible |
+| 7 | Floating Pragma | - | ✓ | FP |
+| 8 | Gas Optimization in Storage Pattern | ✓#1 | - | FP |
+
+> GT findings (3) from official C4 audit report. ✓ = found, ✓#N = found in run N only.
+
+*Analysis status: numbers verified*
+
+### 1. Executive Analysis
+
+Test analysis paragraph.
+
+### 2. Condition Comparison
+
+V2 performed well. Bare CC was cheaper.
+
+### 3. Recommendation
+
+- Use V2 for production
+- Use Bare CC for cost-sensitive runs
+
+## Pipeline Integrity
+
+All findings accounted for. Category sums match parsed counts across all runs.
+
+---
+
+# Data Appendix
+
+## test-codebase — Raw Data
+
+### Recall
+
+\`\`\`
+V2 #1    █████████████░░░░░░░ 2/3 (67%) H-01, H-02
+V2 #2    ███████░░░░░░░░░░░░░ 1/3 (33%) H-01
+Bare CC  █████████████░░░░░░░ 2/3 (67%) H-01, H-02
+\`\`\`
+
+### Classification Breakdown
+
+\`\`\`
+V2 #1    2 matched · 1 novel · 1 FP
+V2 #2    1 matched · 2 novel · 0 FP
+Bare CC  2 matched · 1 novel · 1 FP
+\`\`\`
+
+### Findings Matrix
+
+| GT | Finding | V2 #1 | V2 #2 | Bare CC |
+|----|---------|---|---|---|
+| H-01 | Reentrancy in withdraw | 1/1 | 1/1 | 1/1 |
+| H-02 | Missing access control on setPrice | 1/1 | - | 1/1 |
+| M-01 | Unchecked return value | - | - | - |
+
+### Consistency (multi-run conditions)
+
+**V2** (2 runs):
+- RELIABLE: H-01 (Reentrancy in withdraw)
+- INCONSISTENT: H-02 (Missing access control on setPrice)
+
+### Novel Validation (2 confirmed, 1 plausible, 0 rejected)
+
+| Cluster | Verdict | Severity | Evidence |
+|---------|---------|----------|----------|
+| Flash Loan Price Oracle Manipulation | **CONFIRMED** | high | PriceOracle.getPrice() uses spot price without time-weightin |
+| Unchecked External Call Return Value | plausible | medium | Bridge.transfer() ignores bool return from token.transfer() |
+| Admin Function Centralization Risk | **CONFIRMED** | medium | Governor.execute() has onlyGovernor modifier |
+
+### Per-Run Overview
+
+| Run | Condition | Findings | Duration | Cost |
+|-----|-----------|----------|----------|------|
+| 1 | V2 | 4 | 2m0s | - |
+| 2 | V2 | 3 | 2m10s | - |
+| 1 | Bare CC | 4 | 1m0s | - |
+"
+`;

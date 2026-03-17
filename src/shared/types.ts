@@ -117,6 +117,8 @@ export interface RunClassification {
   stdoutHash: string;
   /** SHA-256 of classification prompt template (invalidates cache on prompt changes). */
   promptHash?: string;
+  /** Number of votes cast per finding (1 = fast, 3 = reliable). For reproducibility. */
+  votesPerFinding?: number;
   classifications: FindingClassification[];
 }
 
@@ -144,6 +146,8 @@ export interface ClusterResult {
   codebaseId: string;
   clusteredAt: string;
   clusterModel: string;
+  /** SHA-256 of serialized cluster inputs (for cache invalidation). */
+  inputHash?: string;
   clusters: NovelCluster[];
   totalFindings: number;
   uniqueBugs: number;
@@ -168,6 +172,8 @@ export interface ValidationResult {
   codebaseId: string;
   validatedAt: string;
   validatorModel: string;
+  /** SHA-256 of cluster file content (for cache invalidation). */
+  clusterHash?: string;
   validations: ClusterValidation[];
   confirmed: number;
   plausible: number;

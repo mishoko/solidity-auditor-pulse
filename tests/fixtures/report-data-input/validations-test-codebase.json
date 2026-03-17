@@ -1,0 +1,35 @@
+{
+  "codebaseId": "test-codebase",
+  "validatedAt": "2026-01-01T17:00:00.000Z",
+  "validatorModel": "claude-opus-4-6",
+  "validations": [
+    {
+      "clusterId": "novel-flash-loan",
+      "title": "Flash Loan Price Oracle Manipulation",
+      "verdict": "confirmed",
+      "severity": "high",
+      "reasoning": "Oracle can be manipulated via flash loan, no TWAP protection",
+      "codeEvidence": "PriceOracle.getPrice() uses spot price without time-weighting"
+    },
+    {
+      "clusterId": "novel-unchecked-return",
+      "title": "Unchecked External Call Return Value",
+      "verdict": "plausible",
+      "severity": "medium",
+      "reasoning": "Return value not checked but impact depends on external contract behavior",
+      "codeEvidence": "Bridge.transfer() ignores bool return from token.transfer()"
+    },
+    {
+      "clusterId": "novel-centralization",
+      "title": "Admin Function Centralization Risk",
+      "verdict": "confirmed",
+      "severity": "medium",
+      "reasoning": "Admin can drain funds but this is by design — governance controlled",
+      "codeEvidence": "Governor.execute() has onlyGovernor modifier",
+      "riskCategory": "centralization-risk"
+    }
+  ],
+  "confirmed": 2,
+  "plausible": 1,
+  "rejected": 0
+}

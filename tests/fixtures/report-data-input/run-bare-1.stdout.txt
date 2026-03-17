@@ -1,0 +1,23 @@
+## Security Audit Report
+
+### [HIGH] Reentrancy in Vault.withdraw
+
+The withdraw function does not follow CEI pattern. Fund drain possible.
+
+### [HIGH] Missing Access Control on TokenSale.setPrice — TokenSale.sol:14-21
+
+Anyone can call setPrice. No onlyOwner modifier.
+
+### [MEDIUM] Oracle Price Manipulation via Flash Loan
+
+The price oracle can be manipulated. TWAP window too short.
+
+### [LOW] Floating Pragma
+
+Solidity version not pinned.
+
+| Severity | Count |
+|---|---|
+| High | 2 |
+| Medium | 1 |
+| Low | 1 |

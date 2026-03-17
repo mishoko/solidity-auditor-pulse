@@ -1,0 +1,21 @@
+## High Severity
+
+### 1. Reentrancy in Vault.withdraw
+
+Drain via reentrant call.
+
+### 2. Flash Loan Price Manipulation
+
+Oracle manipulation via flash loan.
+
+## Medium Severity
+
+### 3. Missing Slippage Check in Router.swap
+
+No minimum output amount enforced.
+
+## Low Severity
+
+### 4. Floating Pragma
+
+Solidity version not pinned.

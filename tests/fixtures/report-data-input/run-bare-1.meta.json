@@ -1,0 +1,12 @@
+{
+  "runId": "run-bare-1",
+  "codebaseId": "test-codebase",
+  "conditionId": "bare_audit",
+  "iteration": 1,
+  "mode": "bare",
+  "timestampUtc": "2026-01-01T12:00:00.000Z",
+  "durationMs": 60000,
+  "exitCode": 0,
+  "timedOut": false,
+  "model": "claude-sonnet-4-20250514"
+}
