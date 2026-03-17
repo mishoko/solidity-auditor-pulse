@@ -18,6 +18,8 @@
     "dashboard": "tsc && node dist/dashboard/render.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "archive": "tsc && node dist/archive/archive-cli.js",
+    "archive:dry": "tsc && node dist/archive/archive-cli.js --dry-run",
     "setup": "mkdir -p results workspaces && touch results/.nosync workspaces/.nosync && echo 'Sync protection markers created.'"
   },
   "dependencies": {

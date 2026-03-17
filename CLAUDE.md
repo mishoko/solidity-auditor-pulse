@@ -58,6 +58,8 @@ src/
     report-cli.ts   CLI entrypoint (npm run report)
   dashboard/        Management HTML dashboard — consumes same shared data feed
     render.ts       HTML renderer (npm run dashboard)
+  archive/          Result archival with provenance manifest
+    archive.ts      Core archive logic (npm run archive)
 config/             JSON benchmark configs (bench.json)
 datasets/           Solidity codebases to audit (submodules + canary inline)
 skills_versions/    Pinned skill snapshots (v1/, v2/, each with source.json provenance)
@@ -66,7 +68,8 @@ results/            Run outputs + report-data.json shared feed (gitignored)
 ground_truth/       Known-bug answer keys per codebase (JSON, enables Recall/FP scoring)
 ground_truth/reports/  Official C4 audit reports (markdown)
 docs/               Isolation strategy, benchmark prompt template, rewrite plan, testing strategy
-tests/              Vitest test suite (260 tests, 14 files)
+archive-results/    Archived result snapshots with MANIFEST.json (gitignored)
+tests/              Vitest test suite (266 tests, 15 files)
 ```
 
 ## How It Works
@@ -126,6 +129,10 @@ npm run report:latest
 npm run dashboard
 npm run dashboard -- --codebases merkl-stripped
 npm run dashboard -- --codebases merkl-stripped,nft-dealers
+
+# Archive results (move to archive-results/ with provenance manifest)
+npm run archive
+npm run archive:dry  # preview without moving
 
 # Build TypeScript
 npm run build
