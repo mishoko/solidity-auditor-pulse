@@ -278,6 +278,59 @@ describe('parseOutput — empty input', () => {
 
 // ─── classifyVuln ───
 
+// ─── Description extraction (edge cases for clustering quality) ───
+
+describe('description extraction', () => {
+  const result = parseOutput(loadFixture('description-edge-cases.txt'));
+
+  it('extracts description body, not the title', () => {
+    expect(result.findings[0]!.description).toContain('checks-effects-interactions');
+    expect(result.findings[0]!.description).toContain('drain all deposited ETH');
+  });
+
+  it('stops at next finding header — does not bleed into next finding', () => {
+    const desc0 = result.findings[0]!.description;
+    const desc1 = result.findings[1]!.description;
+    // First finding's description should NOT contain second finding's content
+    expect(desc0).not.toContain('zero-address');
+    expect(desc0).not.toContain('setRecipient');
+    // Second finding has its own description
+    expect(desc1).toContain('setRecipient');
+  });
+
+  it('strips code blocks from description', () => {
+    const desc = result.findings[0]!.description;
+    // Should not contain the Solidity code
+    expect(desc).not.toContain('function withdraw');
+    expect(desc).not.toContain('msg.sender.call');
+  });
+
+  it('truncates long descriptions at ~300 chars', () => {
+    const desc = result.findings[2]!.description;
+    expect(desc.length).toBeLessThanOrEqual(300);
+    if (desc.length === 300) {
+      expect(desc).toMatch(/\.\.\.$/);
+    }
+  });
+
+  it('every finding has a non-empty description', () => {
+    for (const f of result.findings) {
+      expect(f.description.length, `finding "${f.title}" has empty description`).toBeGreaterThan(0);
+    }
+  });
+
+  it('skill format also extracts descriptions', () => {
+    const skillResult = parseOutput(loadFixture('skill-format.txt'));
+    for (const f of skillResult.findings) {
+      expect(f.description.length, `skill finding "${f.title}" has empty description`).toBeGreaterThan(0);
+    }
+    // Skill descriptions should skip the location line (backtick notation)
+    expect(skillResult.findings[0]!.description).not.toContain('Vault.withdraw` ·');
+  });
+});
+
+// ─── classifyVuln ───
+
 describe('classifyVuln', () => {
   it('detects reentrancy', () => {
     expect(classifyVuln('Reentrancy in withdraw')).toBe('reentrancy');

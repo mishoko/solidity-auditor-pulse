@@ -1,10 +1,13 @@
 /**
  * Semantic clustering of findings across runs.
  *
- * Groups findings by root cause using a single LLM call per codebase.
  * Transforms "42 findings" into "7 unique bugs found N times each."
  *
- * Two modes:
+ * Two clustering paths:
+ *   - Incremental (default): new findings matched against existing clusters (batches of 5)
+ *   - Full (--force or first run): all findings clustered from scratch (chunks of 15)
+ *
+ * Two input modes:
  *   - With GT: clusters only novel + uncertain findings (matched/FP already categorized)
  *   - Without GT: clusters ALL findings (no classification step)
  */
@@ -49,6 +52,16 @@ const ClusterWithScopingResponseSchema = z.array(
     severity: z.enum(['critical', 'high', 'medium', 'low']),
     memberIndices: z.array(z.number()),
     relevantFiles: z.array(z.string()),
+  }),
+);
+
+const IncrementalAssignmentSchema = z.array(
+  z.object({
+    findingIndex: z.number(),
+    assignTo: z.string(), // existing clusterId or "new"
+    newTitle: z.string().optional(),
+    newReasoning: z.string().optional(),
+    newSeverity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
   }),
 );
 
@@ -183,15 +196,387 @@ Where memberIndices are 1-based indices from the findings list above.
 IMPORTANT: Every finding must appear in exactly one cluster. Do not skip any.`;
 }
 
-// ─── Core ───
+// ─── Incremental prompt ───
+
+/**
+ * Build a prompt for assigning new findings to existing clusters.
+ *
+ * Compact cluster context: title + reasoning + severity + member count.
+ * Full finding context: title + reasoning (includes description for no-GT).
+ *
+ * Exported for testing.
+ */
+export function buildIncrementalPrompt(
+  newFindings: ClusterInput[],
+  existingClusters: NovelCluster[],
+  codebaseId: string,
+): string {
+  const clusterSection = existingClusters.length > 0
+    ? existingClusters.map((c) =>
+        `- **${c.clusterId}** (${c.severity}, ${c.foundIn.length} finding(s)): ${c.title}\n  ${c.reasoning}`,
+      ).join('\n')
+    : '(No existing clusters — all findings should be assigned to "new")';
+
+  const findingsList = newFindings.map((f, i) =>
+    `[${i + 1}] Title: ${f.findingTitle}\n  Context: ${f.reasoning}`,
+  ).join('\n\n');
+
+  return `You are a smart contract security expert. Below are NEW audit findings from the "${codebaseId}" codebase that need to be assigned to existing vulnerability clusters or flagged as new unique bugs.
+
+## Existing Clusters
+
+${clusterSection}
+
+## New Findings to Assign
+
+${findingsList}
+
+## Task
+
+For each new finding, decide:
+1. If it describes the SAME root cause as an existing cluster → assign to that cluster's ID
+2. If it's a genuinely NEW vulnerability not covered by any existing cluster → assign to "new"
+
+Be strict about root cause matching — same contract + same function + same bug mechanism = same cluster.
+Different bugs in the same function = different clusters.
+
+Respond with ONLY this JSON array:
+[
+  {
+    "findingIndex": 1,
+    "assignTo": "<existing clusterId>" | "new",
+    "newTitle": "<title for new cluster, only if assignTo=new>",
+    "newReasoning": "<1-2 sentences, only if assignTo=new>",
+    "newSeverity": "critical" | "high" | "medium" | "low" <only if assignTo=new>
+  }
+]
+
+IMPORTANT: Every finding must appear exactly once. Do not skip any.`;
+}
+
+// ─── Helpers ───
+
+const MAX_FINDINGS_PER_FULL_CHUNK = 15;
+const INCREMENTAL_BATCH_SIZE = 5;
+
+/** Identify findings not already in any cluster's foundIn. */
+function findNewFindings(inputs: ClusterInput[], existing: ClusterResult): ClusterInput[] {
+  const known = new Set<string>();
+  for (const cluster of existing.clusters) {
+    for (const f of cluster.foundIn) {
+      known.add(`${f.runId}::${f.findingIndex}`);
+    }
+  }
+  return inputs.filter((f) => !known.has(`${f.runId}::${f.findingIndex}`));
+}
+
+/**
+ * Remove foundIn entries that are no longer in the current inputs.
+ * This handles reclassification (novel→matched) and deleted runs.
+ * Also updates conditionsCaught and removes empty clusters.
+ */
+function pruneStaleFindings(clusters: NovelCluster[], inputs: ClusterInput[]): NovelCluster[] {
+  const validKeys = new Set(inputs.map((f) => `${f.runId}::${f.findingIndex}`));
+
+  const pruned: NovelCluster[] = [];
+  for (const cluster of clusters) {
+    const liveFoundIn = cluster.foundIn.filter(
+      (f) => validKeys.has(`${f.runId}::${f.findingIndex}`),
+    );
+    if (liveFoundIn.length === 0) continue; // Drop empty clusters entirely
+    pruned.push({
+      ...cluster,
+      foundIn: liveFoundIn,
+      conditionsCaught: [...new Set(liveFoundIn.map((f) => f.conditionId))],
+    });
+  }
+  return pruned;
+}
+
+/** Generate content-based cluster ID from title + reasoning. */
+function makeClusterId(title: string, reasoning: string): string {
+  const hash = crypto
+    .createHash('sha256')
+    .update(title + reasoning)
+    .digest('hex')
+    .slice(0, 8);
+  return `novel-${hash}`;
+}
+
+// ─── Incremental clustering ───
+
+/**
+ * Assign new findings to existing clusters or create new ones.
+ * Processes in batches of INCREMENTAL_BATCH_SIZE for reliable LLM responses.
+ */
+async function clusterFindingsIncremental(
+  newFindings: ClusterInput[],
+  existing: ClusterResult,
+  codebaseId: string,
+): Promise<ClusterResult> {
+  // Deep copy clusters to avoid mutating the input
+  const clusters: NovelCluster[] = existing.clusters.map((c) => ({
+    ...c,
+    foundIn: [...c.foundIn],
+    conditionsCaught: [...c.conditionsCaught],
+  }));
+
+  // Process in batches
+  for (let i = 0; i < newFindings.length; i += INCREMENTAL_BATCH_SIZE) {
+    const batch = newFindings.slice(i, i + INCREMENTAL_BATCH_SIZE);
+    const prompt = buildIncrementalPrompt(batch, clusters, codebaseId);
+
+    try {
+      const assignments = await callLLM(prompt, {
+        model: CLUSTER_MODEL,
+        timeout: CLUSTER_TIMEOUT,
+        schema: IncrementalAssignmentSchema,
+        jsonShape: 'array',
+        retries: 3,
+      });
+
+      for (const assignment of assignments) {
+        const findingIdx = assignment.findingIndex;
+        if (findingIdx < 1 || findingIdx > batch.length) continue;
+        const finding = batch[findingIdx - 1]!;
+
+        const findingEntry = {
+          runId: finding.runId,
+          conditionId: finding.conditionId,
+          findingIndex: finding.findingIndex,
+          findingTitle: finding.findingTitle,
+        };
+
+        if (assignment.assignTo === 'new') {
+          // Create new cluster
+          const title = assignment.newTitle ?? finding.findingTitle;
+          const reasoning = assignment.newReasoning ?? finding.reasoning;
+          clusters.push({
+            clusterId: makeClusterId(title, reasoning),
+            title,
+            reasoning,
+            severity: assignment.newSeverity ?? 'unknown',
+            foundIn: [findingEntry],
+            conditionsCaught: [finding.conditionId],
+            // relevantFiles left undefined — validator falls back to scope.txt
+          });
+        } else {
+          // Assign to existing cluster
+          const cluster = clusters.find((c) => c.clusterId === assignment.assignTo);
+          if (cluster) {
+            // Guard against duplicate foundIn entries
+            const alreadyIn = cluster.foundIn.some(
+              (f) => f.runId === finding.runId && f.findingIndex === finding.findingIndex,
+            );
+            if (!alreadyIn) {
+              cluster.foundIn.push(findingEntry);
+            }
+            if (!cluster.conditionsCaught.includes(finding.conditionId)) {
+              cluster.conditionsCaught.push(finding.conditionId);
+            }
+          } else {
+            // Unknown cluster ID from LLM — create new cluster as fallback
+            log.warn(`  Unknown cluster ID "${assignment.assignTo}" — creating new cluster`);
+            clusters.push({
+              clusterId: makeClusterId(finding.findingTitle, finding.reasoning),
+              title: finding.findingTitle,
+              reasoning: finding.reasoning,
+              severity: 'unknown',
+              foundIn: [{
+                runId: finding.runId,
+                conditionId: finding.conditionId,
+                findingIndex: finding.findingIndex,
+                findingTitle: finding.findingTitle,
+              }],
+              conditionsCaught: [finding.conditionId],
+            });
+          }
+        }
+      }
+
+      // Handle unassigned findings in this batch
+      const assignedIndices = new Set(assignments.map((a) => a.findingIndex));
+      for (let j = 0; j < batch.length; j++) {
+        if (!assignedIndices.has(j + 1)) {
+          const f = batch[j]!;
+          log.warn(`  Finding "${f.findingTitle.slice(0, 40)}" not assigned — creating orphan cluster`);
+          clusters.push({
+            clusterId: `novel-orphan-${f.findingIndex}`,
+            title: f.findingTitle,
+            reasoning: f.reasoning,
+            severity: 'unknown',
+            foundIn: [{
+              runId: f.runId,
+              conditionId: f.conditionId,
+              findingIndex: f.findingIndex,
+              findingTitle: f.findingTitle,
+            }],
+            conditionsCaught: [f.conditionId],
+          });
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof LLMError ? err.message : String(err);
+      log.warn(`  Incremental batch failed: ${msg} — adding as orphan clusters`);
+      for (const f of batch) {
+        clusters.push({
+          clusterId: `novel-orphan-${f.findingIndex}`,
+          title: f.findingTitle,
+          reasoning: f.reasoning,
+          severity: 'unknown',
+          foundIn: [{
+            runId: f.runId,
+            conditionId: f.conditionId,
+            findingIndex: f.findingIndex,
+            findingTitle: f.findingTitle,
+          }],
+          conditionsCaught: [f.conditionId],
+        });
+      }
+    }
+  }
+
+  return {
+    codebaseId,
+    clusteredAt: new Date().toISOString(),
+    clusterModel: CLUSTER_MODEL,
+    // inputHash set by the caller (clusterFindings orchestrator)
+    totalFindings: clusters.reduce((sum, c) => sum + c.foundIn.length, 0),
+    uniqueBugs: clusters.length,
+    clusters,
+  };
+}
+
+// ─── Full clustering (with chunking) ───
+
+/**
+ * Full re-cluster from scratch. Splits into chunks of MAX_FINDINGS_PER_FULL_CHUNK
+ * for reliable LLM responses.
+ */
+async function clusterFindingsFull(
+  inputs: ClusterInput[],
+  codebaseId: string,
+  options: ClusterOptions,
+): Promise<NovelCluster[]> {
+  const solFiles = options.scopeFiles ? getSolFileList(codebaseId) : undefined;
+  if (solFiles) {
+    log.info(`  File scoping enabled: ${solFiles.length} source file(s) for ${codebaseId}`);
+  }
+
+  const useScoping = !!(solFiles && solFiles.length > 0);
+
+  interface RawClusterEntry {
+    clusterId: string;
+    title: string;
+    reasoning: string;
+    severity: 'critical' | 'high' | 'medium' | 'low';
+    memberIndices: number[];
+    relevantFiles?: string[];
+  }
+
+  // Split into chunks if needed
+  const chunks: ClusterInput[][] = [];
+  for (let i = 0; i < inputs.length; i += MAX_FINDINGS_PER_FULL_CHUNK) {
+    chunks.push(inputs.slice(i, i + MAX_FINDINGS_PER_FULL_CHUNK));
+  }
+
+  if (chunks.length > 1) {
+    log.info(`  Splitting ${inputs.length} findings into ${chunks.length} chunks of ≤${MAX_FINDINGS_PER_FULL_CHUNK}`);
+  }
+
+  const allClusters: NovelCluster[] = [];
+
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const chunk = chunks[ci]!;
+    const chunkLabel = chunks.length > 1 ? ` (chunk ${ci + 1}/${chunks.length})` : '';
+    log.info(`  Clustering ${chunk.length} findings${chunkLabel}...`);
+
+    let rawClusters: RawClusterEntry[];
+    try {
+      if (useScoping) {
+        rawClusters = await callLLM(buildClusterPrompt(chunk, codebaseId, solFiles), {
+          model: CLUSTER_MODEL,
+          timeout: CLUSTER_TIMEOUT,
+          schema: ClusterWithScopingResponseSchema,
+          jsonShape: 'array',
+          retries: 3,
+        });
+      } else {
+        rawClusters = await callLLM(buildClusterPrompt(chunk, codebaseId), {
+          model: CLUSTER_MODEL,
+          timeout: CLUSTER_TIMEOUT,
+          schema: ClusterResponseSchema,
+          jsonShape: 'array',
+          retries: 3,
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof LLMError ? err.message : String(err);
+      log.warn(`  Clustering failed${chunkLabel}: ${msg}`);
+      // Add chunk findings as orphan clusters
+      for (const f of chunk) {
+        allClusters.push({
+          clusterId: `novel-orphan-${f.findingIndex}`,
+          title: f.findingTitle,
+          reasoning: f.reasoning,
+          severity: 'unknown',
+          foundIn: [{ runId: f.runId, conditionId: f.conditionId, findingIndex: f.findingIndex, findingTitle: f.findingTitle }],
+          conditionsCaught: [f.conditionId],
+        });
+      }
+      continue;
+    }
+
+    // Build clusters from LLM response
+    for (const rc of rawClusters) {
+      const members = rc.memberIndices
+        .filter((i) => i >= 1 && i <= chunk.length)
+        .map((i) => chunk[i - 1]!);
+
+      allClusters.push({
+        clusterId: makeClusterId(rc.title, rc.reasoning),
+        title: rc.title,
+        reasoning: rc.reasoning,
+        severity: rc.severity,
+        foundIn: members.map((m) => ({
+          runId: m.runId,
+          conditionId: m.conditionId,
+          findingIndex: m.findingIndex,
+          findingTitle: m.findingTitle,
+        })),
+        conditionsCaught: [...new Set(members.map((m) => m.conditionId))],
+        relevantFiles: rc.relevantFiles,
+      });
+    }
+
+    // Handle unassigned findings in this chunk
+    const assigned = new Set(rawClusters.flatMap((rc) => rc.memberIndices));
+    for (let j = 0; j < chunk.length; j++) {
+      if (!assigned.has(j + 1)) {
+        const f = chunk[j]!;
+        allClusters.push({
+          clusterId: `novel-orphan-${f.findingIndex}`,
+          title: f.findingTitle,
+          reasoning: f.reasoning,
+          severity: 'unknown',
+          foundIn: [{ runId: f.runId, conditionId: f.conditionId, findingIndex: f.findingIndex, findingTitle: f.findingTitle }],
+          conditionsCaught: [f.conditionId],
+        });
+      }
+    }
+  }
+
+  return allClusters;
+}
+
+// ─── Core orchestrator ───
 
 /**
  * Cluster findings for a single codebase.
  *
- * @param inputs - Findings to cluster (novel+uncertain for GT mode, all for no-GT mode)
- * @param codebaseId - Codebase identifier
- * @param resultsDir - Results directory for output
- * @param options - Cluster options
+ * Two paths:
+ *   - Incremental (default): match new findings against existing clusters
+ *   - Full (--force or no existing clusters): cluster all findings from scratch (chunked)
  */
 export async function clusterFindings(
   inputs: ClusterInput[],
@@ -203,32 +588,28 @@ export async function clusterFindings(
 
   if (inputs.length === 0) return null;
 
-  // Content-based cache key: hash of inputs + model + scoping option
+  // Content-based cache key
   const inputHash = hashContent(
     JSON.stringify(inputs) + CLUSTER_MODEL + String(!!options.scopeFiles),
   );
 
-  // Cache check: content hash + model must match
+  // Load existing clusters (if any)
+  let existing: ClusterResult | null = null;
   if (!options.force && fs.existsSync(outPath)) {
     try {
-      const existing: ClusterResult = JSON.parse(fs.readFileSync(outPath, 'utf8'));
-      if (existing.inputHash === inputHash && existing.clusterModel === CLUSTER_MODEL) {
+      existing = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+      // Cache hit: all inputs unchanged + model unchanged
+      if (existing!.inputHash === inputHash && existing!.clusterModel === CLUSTER_MODEL) {
         log.info(`  ${codebaseId}: clusters up to date — skipping`);
         return existing;
       }
     } catch {
-      // Corrupted file — re-cluster
+      existing = null; // Corrupted file — re-cluster
     }
   }
 
-  // Resolve file list for scoping (if enabled)
-  const solFiles = options.scopeFiles ? getSolFileList(codebaseId) : undefined;
-  if (solFiles) {
-    log.info(`  File scoping enabled: ${solFiles.length} source file(s) for ${codebaseId}`);
-  }
-
-  // Single finding = single cluster (no LLM needed)
-  if (inputs.length === 1) {
+  // Single finding + no existing clusters = single cluster (no LLM needed)
+  if (inputs.length === 1 && (!existing || existing.clusters.length === 0)) {
     const f = inputs[0]!;
     const result: ClusterResult = {
       codebaseId,
@@ -237,139 +618,69 @@ export async function clusterFindings(
       inputHash,
       totalFindings: 1,
       uniqueBugs: 1,
-      clusters: [
-        {
-          clusterId: 'novel-1',
-          title: f.findingTitle,
-          reasoning: f.reasoning,
-          severity: 'unknown',
-          foundIn: [
-            {
-              runId: f.runId,
-              conditionId: f.conditionId,
-              findingIndex: f.findingIndex,
-              findingTitle: f.findingTitle,
-            },
-          ],
-          conditionsCaught: [f.conditionId],
-          // Don't assign all files — validator falls back to scope.txt if relevantFiles absent
-        },
-      ],
+      clusters: [{
+        clusterId: 'novel-1',
+        title: f.findingTitle,
+        reasoning: f.reasoning,
+        severity: 'unknown',
+        foundIn: [{ runId: f.runId, conditionId: f.conditionId, findingIndex: f.findingIndex, findingTitle: f.findingTitle }],
+        conditionsCaught: [f.conditionId],
+      }],
     };
     fs.writeFileSync(outPath, JSON.stringify(result, null, 2));
     log.info(`  ${codebaseId}: 1 finding → 1 cluster (no LLM needed)`);
     return result;
   }
 
-  const scopeLabel = solFiles ? ` + file scoping` : '';
-  log.info(`  Clustering ${inputs.length} findings for ${codebaseId}${scopeLabel}...`);
+  // Choose path: incremental vs full
+  let result: ClusterResult;
 
-  const useScoping = !!(solFiles && solFiles.length > 0);
-
-  // Common shape for both schemas — relevantFiles may or may not be present
-  interface RawClusterEntry {
-    clusterId: string;
-    title: string;
-    reasoning: string;
-    severity: 'critical' | 'high' | 'medium' | 'low';
-    memberIndices: number[];
-    relevantFiles?: string[];
-  }
-
-  let rawClusters: RawClusterEntry[];
-  try {
-    if (useScoping) {
-      rawClusters = await callLLM(buildClusterPrompt(inputs, codebaseId, solFiles), {
-        model: CLUSTER_MODEL,
-        timeout: CLUSTER_TIMEOUT,
-        schema: ClusterWithScopingResponseSchema,
-        jsonShape: 'array',
-        retries: 3,
-      });
-    } else {
-      rawClusters = await callLLM(buildClusterPrompt(inputs, codebaseId), {
-        model: CLUSTER_MODEL,
-        timeout: CLUSTER_TIMEOUT,
-        schema: ClusterResponseSchema,
-        jsonShape: 'array',
-        retries: 3,
-      });
+  if (!options.force && existing && existing.clusters.length > 0) {
+    // Prune stale foundIn entries (findings that were reclassified or deleted)
+    const prunedClusters = pruneStaleFindings(existing.clusters, inputs);
+    const prunedCount = existing.clusters.reduce((s, c) => s + c.foundIn.length, 0) -
+      prunedClusters.reduce((s, c) => s + c.foundIn.length, 0);
+    if (prunedCount > 0) {
+      log.info(`  ${codebaseId}: pruned ${prunedCount} stale finding(s) from clusters`);
     }
-  } catch (err) {
-    const msg = err instanceof LLMError ? err.message : String(err);
-    log.warn(`  Clustering failed for ${codebaseId}: ${msg}`);
-    return null;
-  }
+    const droppedClusters = existing.clusters.length - prunedClusters.length;
+    if (droppedClusters > 0) {
+      log.info(`  ${codebaseId}: dropped ${droppedClusters} empty cluster(s)`);
+    }
+    existing.clusters = prunedClusters;
 
-  // Build typed clusters with content-based IDs for stability
-  const clusters: NovelCluster[] = rawClusters.map((rc) => {
-    const members = rc.memberIndices
-      .filter((i) => i >= 1 && i <= inputs.length)
-      .map((i) => inputs[i - 1]!);
+    // Incremental: match new findings against existing clusters
+    const newFindings = findNewFindings(inputs, existing);
+    if (newFindings.length === 0) {
+      log.info(`  ${codebaseId}: no new findings to cluster`);
+      // Update counts and inputHash
+      existing.inputHash = inputHash;
+      existing.totalFindings = prunedClusters.reduce((s, c) => s + c.foundIn.length, 0);
+      existing.uniqueBugs = prunedClusters.length;
+      fs.writeFileSync(outPath, JSON.stringify(existing, null, 2));
+      return existing;
+    }
 
-    const conditionsCaught = [...new Set(members.map((m) => m.conditionId))];
-
-    // Content-based ID: SHA-256(title + reasoning) truncated to 8 chars
-    const hash = crypto
-      .createHash('sha256')
-      .update(rc.title + rc.reasoning)
-      .digest('hex')
-      .slice(0, 8);
-
-    return {
-      clusterId: `novel-${hash}`,
-      title: rc.title,
-      reasoning: rc.reasoning,
-      severity: rc.severity,
-      foundIn: members.map((m) => ({
-        runId: m.runId,
-        conditionId: m.conditionId,
-        findingIndex: m.findingIndex,
-        findingTitle: m.findingTitle,
-      })),
-      conditionsCaught,
-      relevantFiles: rc.relevantFiles,
+    log.info(`  ${codebaseId}: ${newFindings.length} new finding(s) to assign to ${existing.clusters.length} existing cluster(s) [incremental]`);
+    result = await clusterFindingsIncremental(newFindings, existing, codebaseId);
+    result.inputHash = inputHash;
+  } else {
+    // Full: cluster all findings from scratch (chunked if needed)
+    log.info(`  ${codebaseId}: clustering ${inputs.length} findings [full${options.force ? ', forced' : ''}]`);
+    const clusters = await clusterFindingsFull(inputs, codebaseId, options);
+    result = {
+      codebaseId,
+      clusteredAt: new Date().toISOString(),
+      clusterModel: CLUSTER_MODEL,
+      inputHash,
+      totalFindings: inputs.length,
+      uniqueBugs: clusters.length,
+      clusters,
     };
-  });
-
-  // Verify all findings were assigned
-  const assigned = new Set(rawClusters.flatMap((rc) => rc.memberIndices));
-  const unassigned = inputs.filter((_, i) => !assigned.has(i + 1));
-  if (unassigned.length > 0) {
-    log.warn(
-      `  ${unassigned.length} finding(s) not assigned to any cluster — adding as individual clusters`,
-    );
-    for (const f of unassigned) {
-      clusters.push({
-        clusterId: `novel-orphan-${f.findingIndex}`,
-        title: f.findingTitle,
-        reasoning: f.reasoning,
-        severity: 'unknown',
-        foundIn: [
-          {
-            runId: f.runId,
-            conditionId: f.conditionId,
-            findingIndex: f.findingIndex,
-            findingTitle: f.findingTitle,
-          },
-        ],
-        conditionsCaught: [f.conditionId],
-      });
-    }
   }
-
-  const result: ClusterResult = {
-    codebaseId,
-    clusteredAt: new Date().toISOString(),
-    clusterModel: CLUSTER_MODEL,
-    inputHash,
-    totalFindings: inputs.length,
-    uniqueBugs: clusters.length,
-    clusters,
-  };
 
   fs.writeFileSync(outPath, JSON.stringify(result, null, 2));
-  log.success(`  Clustered ${inputs.length} findings into ${clusters.length} unique bugs`);
+  log.success(`  ${codebaseId}: ${result.totalFindings} findings in ${result.uniqueBugs} clusters`);
 
   return result;
 }

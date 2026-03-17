@@ -38,7 +38,7 @@ src/
     types.ts        Central type definitions
     report-data.ts  Shared data feed (ReportData) — single source of truth for all renderers
     parser.ts       Finding extraction from raw audit output
-    util/           Logger, shell helpers
+    util/           Logger, shell helpers, hash utility
   runner/           Benchmark execution — spawns claude, captures output
     cli.ts          CLI entrypoint (npm run bench)
     config.ts       Config loader (bench.json)
@@ -47,9 +47,9 @@ src/
     skill.ts        Skill version management
     verify.ts       Post-run verification (12 checks)
   classifier/       Analysis pipeline — independent from runner
-    llm.ts          Shared LLM call utility (spawn, JSON parse, Zod validate)
+    llm.ts          LLM call utility with injectable LLMProvider (CLI default, fake for tests)
     classify.ts     GT classification with configurable Nx majority vote
-    cluster.ts      Novel finding clustering (single LLM call per codebase)
+    cluster.ts      Novel finding clustering (incremental + chunked full)
     validate.ts     Novel validation against scoped source code
     pipeline.ts     Orchestrator: classify → cluster → validate
     pipeline-cli.ts CLI entrypoint (npm run analyze)
@@ -65,7 +65,8 @@ workspaces/         Ephemeral real-copy workspaces (gitignored, auto-cleaned)
 results/            Run outputs + report-data.json shared feed (gitignored)
 ground_truth/       Known-bug answer keys per codebase (JSON, enables Recall/FP scoring)
 ground_truth/reports/  Official C4 audit reports (markdown)
-docs/               Isolation strategy, benchmark prompt template, rewrite plan
+docs/               Isolation strategy, benchmark prompt template, rewrite plan, testing strategy
+tests/              Vitest test suite (260 tests, 14 files)
 ```
 
 ## How It Works
@@ -157,17 +158,22 @@ The analysis pipeline (`npm run analyze`) runs 3 steps:
 
 ### Step 1: Classify (with GT only)
 - For each finding, calls Sonnet with the same classification prompt — configurable Nx vote via `CLASSIFY_VOTES` (default 1 for fast iteration, use 3 for production reliability)
-- Takes majority vote: 3/3 = high confidence, 2/3 = medium, no majority = uncertain
+- Takes majority vote: agreement labels are dynamic (e.g. `3/3`, `2/3`, `1/1`, `4/5`) based on actual vote count
 - `uncertain` findings are preserved (not defaulted to FP) and flow into clustering
 - Categories: `matched`, `novel`, `fp`, `uncertain`
 - Deduplicates GT matches (highest agreement wins)
 - Cached by `sha256(gtContent + stdoutContent + promptTemplate)` — prompt changes auto-invalidate cache
+- Records `votesPerFinding` in output for reproducibility
 
 ### Step 2: Cluster
 - Groups novel + uncertain findings (GT mode) or ALL findings (no-GT mode) by root cause
-- Single Sonnet call per codebase
-- Content-based cluster IDs for stability
-- Maps clusters to relevant source files for scoped validation
+- Two clustering paths:
+  - **Incremental (default):** new findings matched against existing clusters in batches of 5. Existing clusters stay stable.
+  - **Full (--force or first run):** all findings clustered from scratch in chunks of ≤15 for reliable LLM responses.
+- Content-based cluster IDs (SHA-256 of title + reasoning) for stability
+- Stale foundIn entries pruned when findings are reclassified (novel→matched); empty clusters dropped
+- Cached by content hash (inputs + model + scoping option) — no mtime, model changes auto-invalidate
+- No-GT mode uses parser-extracted descriptions for richer clustering context
 
 ### Step 3: Validate
 - Per cluster: Opus examines **scoped** source code (only files referenced by finding locations)
@@ -175,6 +181,7 @@ The analysis pipeline (`npm run analyze`) runs 3 steps:
 - Three verdicts: confirmed, plausible, rejected
 - Risk categorization: each confirmed/plausible finding tagged with `riskCategory` (`centralization-risk`, `informational`, or absent for real vulnerabilities)
 - Dashboard and report can filter by risk category — data is preserved, display is filtered
+- Cached by content hash (cluster file + validator model) — model changes auto-invalidate
 
 ### Report
 - Management comparison table (one column per condition)
@@ -212,11 +219,11 @@ Every run is verified automatically by `src/runner/verify.ts` with 12 checks:
 `src/shared/parser.ts` extracts findings from audit output in multiple formats:
 
 - **Skill format**: `[confidence] **N. Title**` with `` `Contract.function` · Confidence: N ``
-- **Bare formats**: `### [SEVERITY] Title`, `### H-1: Title`, `### [H-1] Title`, `### N. Title — **SEVERITY**`
+- **Bare formats** (7 variants): `### [SEVERITY] Title`, `### H-1: Title`, `### [H-1] Title`, `### N. Title — **SEVERITY**`, `### N. Title (Severity)`, `**N. [SEVERITY] Title**`, `### N. Title` (severity from section header)
 
-Each finding gets a location (`Contract.function`), vulnerability classification, and root-cause key for cross-run comparison.
+Each finding gets a location (`Contract.function`), vulnerability classification, description body (~300 chars), and root-cause key for cross-run comparison.
 
-When the regex parser misses findings (detected via `extractUnmatchedBlocks`), an LLM fallback call recovers them during classification.
+When the regex parser misses findings (detected via `extractUnmatchedBlocks`), an LLM fallback call recovers them during classification (uses LLMProvider, testable with fakes).
 
 ## Adding a Skill Version
 

@@ -1,0 +1,25 @@
+## Security Audit
+
+### [HIGH] Reentrancy in Vault.withdraw — Vault.sol:14-21
+
+The withdraw function does not follow the checks-effects-interactions pattern.
+An attacker can re-enter via the fallback function and drain all deposited ETH.
+
+```solidity
+function withdraw(uint amount) external {
+    require(balances[msg.sender] >= amount);
+    (bool ok, ) = msg.sender.call{value: amount}("");
+    balances[msg.sender] -= amount;
+}
+```
+
+Impact: Complete loss of deposited funds.
+
+### [MEDIUM] Missing zero-address check in setRecipient
+
+The setRecipient function does not validate the new address.
+Setting recipient to address(0) would permanently lock funds.
+
+### [LOW] Finding with very long description that should be truncated at three hundred characters to avoid bloating the clustering prompt with excessive text that adds no value to the semantic matching process and would only waste tokens in the LLM context window making it harder for Sonnet to focus on the actual vulnerability root cause which is what matters for accurate cluster assignment not the verbose explanation padding
+
+Short body after long title.

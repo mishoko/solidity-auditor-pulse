@@ -201,14 +201,17 @@ function parseAndValidate<T>(raw: string, opts: LLMCallOptions<T>): T {
   const pattern = opts.jsonShape === 'array' ? /\[[\s\S]*\]/ : /\{[\s\S]*\}/;
   const match = raw.match(pattern);
   if (!match) {
-    throw new LLMError('parse', `No JSON ${opts.jsonShape ?? 'object'} found in response (${raw.length} chars)`);
+    // Log the actual response for forensics — critical for diagnosing LLM failures
+    const preview = raw.length <= 200 ? raw : raw.slice(0, 200) + '…';
+    throw new LLMError('parse', `No JSON ${opts.jsonShape ?? 'object'} found in response (${raw.length} chars): "${preview}"`);
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(match[0]);
   } catch (e) {
-    throw new LLMError('parse', `Invalid JSON: ${(e as Error).message}`);
+    const preview = match[0].length <= 200 ? match[0] : match[0].slice(0, 200) + '…';
+    throw new LLMError('parse', `Invalid JSON: ${(e as Error).message}. Raw: "${preview}"`);
   }
 
   const result = opts.schema.safeParse(parsed);
