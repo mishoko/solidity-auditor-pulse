@@ -8,6 +8,8 @@ workspaces/*
 *.tsbuildinfo
 .DS_Store
 /docs-temp
+/docs-archive
 /archive-results
 summary.md
 dashboard.html
+.claude/settings.local.json

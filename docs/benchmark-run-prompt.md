@@ -5,7 +5,7 @@ Copy the block below and set the `CODEBASES` variable to one or more dataset nam
 **Single codebase:** `CODEBASES=merkl`
 **Multiple codebases:** `CODEBASES=canary,nft-dealers,merkl`
 
-Available codebases: `canary`, `nft-dealers`, `merkl-stripped`, `merkl`, `brix`, `ekubo`, `megapot`, `panoptic`
+Available codebases: `canary`, `nft-dealers`, `merkl-stripped`, `merkl`, `brix`, `ekubo`, `megapot`, `megapot-stripped`, `panoptic`
 
 ---
 

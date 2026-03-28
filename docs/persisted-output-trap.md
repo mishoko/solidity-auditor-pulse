@@ -1,5 +1,7 @@
 # The Persisted-Output Trap: Why Subagents Fail on Medium-Sized Codebases
 
+> **Note**: This issue was documented on 2026-03-13 against Claude Code's platform behavior at that time. The thresholds and behavior described may have changed in newer Claude Code versions. The investigation methodology and findings remain relevant for understanding skill failure modes on larger codebases.
+
 ## Summary
 
 When the solidity-auditor skill spawns subagents to read bundle files, a Claude Code platform interaction between the **Read tool's 25K token limit** and the **persisted-output 50K character threshold** creates a deadlock that prevents agents from reading their bundles. This affects any codebase where the bundle's formatted Read output exceeds 50K characters (~1,200+ lines of Solidity with line-number formatting).
