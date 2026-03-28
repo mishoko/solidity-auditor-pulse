@@ -25,13 +25,8 @@ const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const RESULTS_DIR = path.join(ROOT, 'results');
 const OUTPUT_FILE = path.join(ROOT, 'dashboard.html');
 
-/** Condition IDs to show in dashboard (comment out to hide). */
-const VISIBLE_CONDITIONS = new Set([
-  'skill_v2',
-  'skill_v1_default',
-  // 'skill_v1_deep',
-  'bare_audit',
-]);
+/** Condition IDs to show in dashboard — null means show all from data. */
+let VISIBLE_CONDITIONS: Set<string> | null = null;
 
 // ─── Display formatting (no computation — just string conversion) ───
 
@@ -302,7 +297,7 @@ function main(): void {
 
   if (codebaseFilter.size > 0) {
     // Codebase-subset view: use shared filterByCodebases (same math as summary.md)
-    const filtered = filterByCodebases(data, codebaseFilter, VISIBLE_CONDITIONS);
+    const filtered = filterByCodebases(data, codebaseFilter, VISIBLE_CONDITIONS ?? undefined);
     aggregates = filtered.aggregates;
     bests = filtered.metricBests;
     displayData = {
@@ -315,7 +310,9 @@ function main(): void {
     };
   } else {
     // All codebases: use pre-computed cross-codebase aggregates
-    aggregates = data.crossCodebaseAggregates.filter((a) => VISIBLE_CONDITIONS.has(a.conditionId));
+    aggregates = VISIBLE_CONDITIONS
+      ? data.crossCodebaseAggregates.filter((a) => VISIBLE_CONDITIONS!.has(a.conditionId))
+      : data.crossCodebaseAggregates;
     bests = data.metricBests;
   }
 
