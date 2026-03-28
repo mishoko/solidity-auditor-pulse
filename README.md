@@ -119,6 +119,11 @@ npm run dashboard                                    # HTML management dashboard
 npm run add-skill -- --name my-skill --repo <github-url> --path <skill-dir>
 npm run remove-skill -- --name my-skill
 
+# Codebase management
+npm run add-codebase -- --name my-protocol --repo <github-url>
+npm run add-codebase -- --name my-protocol --local <path>     # Local copy (no submodule)
+npm run remove-codebase -- --name my-protocol
+
 # Archive
 npm run archive                                      # Move results to archive with manifest
 npm run archive:dry                                  # Preview

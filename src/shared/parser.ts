@@ -69,6 +69,8 @@ const BARE_PAREN_SEV_RE = /^#{2,4}\s+\d+\.\s+(.+?)\s+\((Critical|High|Medium|Low
 const BARE_BOLD_INLINE_RE = /^\*\*\d+\.\s+\[(CRITICAL|HIGH|MEDIUM|LOW|INFO)\]\s+(.+?)(?:\s+—\s+(.+?))?\*\*\s*$/i;
 // Pattern 6: ### N. Title (plain numbered, severity inherited from section header like ## High Severity)
 const BARE_SECTION_NUMBERED_RE = /^#{2,4}\s+\d+\.\s+(.+?)$/i;
+// Pattern 7: ## [confidence] N. Title (DarkNavy contract-auditor format — confidence score in brackets)
+const BARE_CONFIDENCE_NUM_RE = /^#{2,4}\s+\[(\d+)\]\s+\d+\.\s+(.+?)$/;
 // Section header pattern for severity inheritance
 const SEVERITY_SECTION_RE = /^#{1,3}\s+(?:(Critical)(?:\s*\/?\s*High)?|(High)|(Medium)|(Low)|(Informational|Info))\s+Severity/i;
 
@@ -474,7 +476,10 @@ function parseBareFormat(lines: string[]): ParseResult {
     // Pattern 6: ### N. Title (only when section severity is active, checked LAST)
     const sevSectionNumMatch = (sevWordMatch || sevPrefixMatch || sevBracketMatch || sevTrailingMatch || sevParenMatch || sevBoldMatch) ? null
       : (currentSectionSeverity ? BARE_SECTION_NUMBERED_RE.exec(line) : null);
-    const bareMatch = sevWordMatch || sevPrefixMatch || sevBracketMatch || sevTrailingMatch || sevParenMatch || sevBoldMatch || sevSectionNumMatch;
+    // Pattern 7: ## [confidence] N. Title (DarkNavy format — confidence score in brackets)
+    const confNumMatch = (sevWordMatch || sevPrefixMatch || sevBracketMatch || sevTrailingMatch || sevParenMatch || sevBoldMatch || sevSectionNumMatch) ? null
+      : BARE_CONFIDENCE_NUM_RE.exec(line);
+    const bareMatch = sevWordMatch || sevPrefixMatch || sevBracketMatch || sevTrailingMatch || sevParenMatch || sevBoldMatch || sevSectionNumMatch || confNumMatch;
     if (bareMatch) {
       index++;
       const sevLetterMap: Record<string, string> = { C: 'CRITICAL', H: 'HIGH', M: 'MEDIUM', L: 'LOW', I: 'INFO' };
@@ -500,6 +505,11 @@ function parseBareFormat(lines: string[]): ParseResult {
         // Pattern 6: ### N. Title with severity from section header
         severity = currentSectionSeverity!;
         title = sevSectionNumMatch[1].trim();
+        locStr = null;
+      } else if (confNumMatch?.[1] && confNumMatch[2]) {
+        // Pattern 7: ## [confidence] N. Title — keep raw confidence score as severity
+        severity = `[${confNumMatch[1]}]`;
+        title = confNumMatch[2].trim();
         locStr = null;
       } else {
         const numbered = (sevPrefixMatch ?? sevBracketMatch)!;

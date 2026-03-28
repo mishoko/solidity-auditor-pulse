@@ -138,6 +138,11 @@ npm run archive:dry  # preview without moving
 npm run add-skill -- --name my-skill --repo https://github.com/org/repo --path skill-dir
 npm run remove-skill -- --name my-skill
 
+# Codebase management
+npm run add-codebase -- --name my-protocol --repo https://github.com/org/repo
+npm run add-codebase -- --name my-protocol --local path/to/dir
+npm run remove-codebase -- --name my-protocol
+
 # Build TypeScript
 npm run build
 
