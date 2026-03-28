@@ -93,11 +93,10 @@ The runner supports multiple conditions, each representing a different audit app
 | Condition | Description |
 |-----------|-------------|
 | `bare_audit` | Raw Claude with a security audit prompt. No skill, no user config. The baseline. |
-| `skill_v1_default` | Pashov's solidity-auditor skill (v1) — 4 parallel scan agents (Sonnet) |
-| `skill_v1_deep` | V1 skill + adversarial verification agent (Opus) |
-| `skill_v2` | V2 skill — 5 agents + FP-gate validation |
+| `pashov` | Pashov's solidity-auditor skill — multi-agent with vector-scan + adversarial |
+| `darknavy` | DarkNavy's contract-auditor skill — 4 hunt agents + adversarial validation |
 
-Adding a new skill is straightforward — see [Adding a Skill Version](#adding-a-skill-version).
+Conditions are config-driven. Add/remove skills with `npm run add-skill` / `npm run remove-skill`.
 
 ## Commands
 
@@ -116,13 +115,17 @@ npm run analyze -- --latest                          # Only latest run per condi
 npm run report                                       # Standalone report generation
 npm run dashboard                                    # HTML management dashboard
 
+# Skill management
+npm run add-skill -- --name my-skill --repo <github-url> --path <skill-dir>
+npm run remove-skill -- --name my-skill
+
 # Archive
 npm run archive                                      # Move results to archive with manifest
 npm run archive:dry                                  # Preview
 
 # Dev
 npm run build                                        # Build TypeScript
-npm run test                                         # Run test suite (266 tests)
+npm run test                                         # Run test suite (271 tests)
 ```
 
 ## Project Structure
@@ -156,19 +159,14 @@ After benchmark runs complete, `npm run analyze` processes results in 3 stages:
 
 The report combines deterministic tables (recall, precision, findings matrix, consistency) with a single LLM-generated narrative summary.
 
-## Adding a Skill Version
+## Adding a Skill
 
-1. Copy the skill directory into `skills_versions/<version>/`
-2. Create `skills_versions/<version>/source.json`:
-   ```json
-   {
-     "repo": "https://github.com/...",
-     "commit": "abc123...",
-     "tag": "v1.0",
-     "snapshotDate": "2026-03-15"
-   }
-   ```
-3. Add a condition in `config/bench.json`
+```bash
+npm run add-skill -- --name pashov --repo https://github.com/pashov/skills --path solidity-auditor
+npm run add-skill -- --name darknavy --repo https://github.com/DarkNavySecurity/web3-skills --path contract-auditor --commit abc123
+```
+
+This clones the skill, creates `skills_versions/<name>/` with provenance tracking (`source.json`), and adds a condition to `config/bench.json`. Use `npm run remove-skill -- --name <name>` to reverse.
 
 ## Adding a Codebase
 

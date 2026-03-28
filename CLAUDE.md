@@ -62,7 +62,7 @@ src/
     archive.ts      Core archive logic (npm run archive)
 config/             JSON benchmark configs (bench.json)
 datasets/           Solidity codebases to audit (submodules + canary inline)
-skills_versions/    Pinned skill snapshots (v1/, v2/, each with source.json provenance)
+skills_versions/    Pinned skill snapshots (pashov/, darknavy/, each with source.json provenance)
 workspaces/         Ephemeral real-copy workspaces (gitignored, auto-cleaned)
 results/            Run outputs + report-data.json shared feed (gitignored)
 ground_truth/       Known-bug answer keys per codebase (JSON, enables Recall/FP scoring)
@@ -97,10 +97,10 @@ tests/              Vitest test suite (266 tests, 15 files)
 ## Commands
 
 ```bash
-# Quick single test
-npm run bench -- --codebases canary --conditions skill_v2 --runs 1
+# Quick single test example
+npm run bench -- --codebases canary --conditions pashov --runs 1
 
-# Parallel run
+# Parallel run example
 npm run bench -- --codebases merkl-stripped --runs 3 --parallel
 
 # Dry run
@@ -134,6 +134,10 @@ npm run dashboard -- --codebases merkl-stripped,nft-dealers
 npm run archive
 npm run archive:dry  # preview without moving
 
+# Skill management
+npm run add-skill -- --name my-skill --repo https://github.com/org/repo --path skill-dir
+npm run remove-skill -- --name my-skill
+
 # Build TypeScript
 npm run build
 
@@ -141,10 +145,10 @@ npm run build
 npm run setup
 ```
 
-### Bench filters
+### Bench filters example
 
 - `--codebases <id>` — filter to specific codebase(s): `canary`, `merkl`, `merkl-stripped`, `brix`, `ekubo`, `megapot`, `panoptic`, `nft-dealers`
-- `--conditions <id>` — filter to specific condition(s): `bare_audit`, `skill_v1_default`, `skill_v1_deep`, `skill_v2`
+- `--conditions <id>` — filter to specific condition(s): `bare_audit`, `pashov`, `darknavy` (or any installed skill)
 - `--runs <N>` — override number of iterations per condition (default: 1)
 - `--model <model>` — override Claude model
 - `--dry-run` — preview without spawning claude
@@ -155,9 +159,10 @@ npm run setup
 | Condition | What it does |
 |---|---|
 | `bare_audit` | Raw Claude with a security audit prompt, no skills, no user config |
-| `skill_v1_default` | V1 skill, 4 vector-scan agents (Sonnet) |
-| `skill_v1_deep` | V1 skill, 4 vector-scan agents (Sonnet) + 1 adversarial agent (Opus) |
-| `skill_v2` | V2 skill, 5 agents + fp-gate validation agent (no deep mode — always full) |
+| `pashov` | Pashov's solidity-auditor skill — multi-agent with vector-scan + adversarial |
+| `darknavy` | DarkNavy's contract-auditor skill — 4 hunt agents + adversarial validation |
+
+Conditions are config-driven via `config/bench.json`. Add/remove skills with `npm run add-skill` / `npm run remove-skill`.
 
 ## Classification Pipeline
 

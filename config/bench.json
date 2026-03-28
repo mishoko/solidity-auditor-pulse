@@ -48,29 +48,15 @@
       "prompt": "Perform a comprehensive security audit of the codebase. Find all vulnerabilities through deep analysis"
     },
     {
-      "id": "pashov_v1",
+      "id": "pashov",
       "type": "skill",
-      "skillVersion": "pashov-v1",
+      "skillVersion": "pashov",
       "command": "/solidity-auditor"
     },
     {
-      "id": "pashov_v1_deep",
+      "id": "darknavy",
       "type": "skill",
-      "skillVersion": "pashov-v1",
-      "command": "/solidity-auditor deep",
-      "deep": true
-    },
-    {
-      "id": "pashov_v2",
-      "type": "skill",
-      "skillVersion": "pashov-v2",
-      "command": "/solidity-auditor",
-      "expectedMinAgents": 5
-    },
-    {
-      "id": "darknavy_v1",
-      "type": "skill",
-      "skillVersion": "darknavy-v1",
+      "skillVersion": "darknavy",
       "command": "/contract-auditor"
     }
   ],

@@ -192,7 +192,7 @@ Full path detail (single Sonnet call per chunk):
 │  │   Title: recoverFees Drains Balances  │                          │
 │  │   Reasoning: <from classify or parse> │                          │
 │  │                                       │                          │
-│  │ [2] (run: ..., condition: skill_v2)   │                          │
+│  │ [2] (run: ..., condition: pashov)     │                          │
 │  │   Title: Fee Drain via recoverFees    │                          │
 │  │   Reasoning: ...                      │                          │
 │  │                                       │                          │
@@ -249,9 +249,9 @@ After the LLM call:
       relevantFiles: ["contracts/DistributionCreator.sol"],
       foundIn: [
         { runId: "...", conditionId: "bare_audit", ... },
-        { runId: "...", conditionId: "skill_v2", ... }
+        { runId: "...", conditionId: "pashov", ... }
       ],
-      conditionsCaught: ["bare_audit", "skill_v2"]
+      conditionsCaught: ["bare_audit", "pashov"]
     },
     ...
   ]

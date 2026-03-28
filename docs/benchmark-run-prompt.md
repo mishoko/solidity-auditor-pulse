@@ -13,13 +13,13 @@ Available codebases: `canary`, `nft-dealers`, `merkl-stripped`, `merkl`, `brix`,
 CODEBASES=merkl-stripped
 RUNS=1
 
-Run a parallel benchmark on the above codebase(s) with all 3 conditions (bare_audit, skill_v1_default, skill_v2), $RUNS run each, 10-minute timeout.
+Run a parallel benchmark on the above codebase(s) with all conditions (bare_audit, pashov, darknavy), $RUNS run each, 10-minute timeout.
 
 Before running:
 1. Build the project
 
 Run:
-3. Execute: npm run bench -- --codebases $CODEBASES --conditions bare_audit,skill_v1_default,skill_v2 --runs $RUNS --parallel
+3. Execute: npm run bench -- --codebases $CODEBASES --conditions bare_audit,pashov,darknavy --runs $RUNS --parallel
 
 After the run completes:
 4. Verify all conditions passed verification checks
@@ -36,7 +36,7 @@ Produce a summary with:
 
 Per codebase:
 
-| Metric | bare_audit | skill_v1_default | skill_v2 |
+| Metric | bare_audit | pashov | darknavy |
 |---|---|---|---|
 | Duration | | | |
 | Exit code | | | |
