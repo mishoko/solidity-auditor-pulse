@@ -8,7 +8,7 @@ import * as log from '../shared/util/logger.js';
 
 function printUsage(): void {
   console.log(`
-benchmark-runner — Benchmark solidity-auditor skill vs bare Claude
+benchmark-runner — Benchmark Claude Code audit skills vs bare Claude
 
 Usage:
   node dist/cli.js [options]

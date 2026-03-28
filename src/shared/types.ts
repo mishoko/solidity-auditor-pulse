@@ -19,6 +19,7 @@ export interface SkillConditionConfig {
   command: string;
   deep?: boolean;
   fileOutput?: boolean;
+  expectedMinAgents?: number;
 }
 
 export type ConditionConfig = BareConditionConfig | SkillConditionConfig;
@@ -41,6 +42,7 @@ export interface RunMeta {
   mode: 'bare' | 'skill';
   deep?: boolean;
   fileOutput?: boolean;
+  expectedMinAgents?: number;
   claudeModel?: string;
   claudeCliVersion?: string;
   exitCode: number;

@@ -125,8 +125,8 @@ class LiveMonitor {
       const model = event.model as string ?? '?';
       const tools = (event.tools as string[])?.length ?? 0;
       const skills = (event.slash_commands as string[]) ?? [];
-      const hasSkill = skills.includes('solidity-auditor');
-      this.out(`Session started — model: ${model}, tools: ${tools}, skill: ${hasSkill ? 'YES' : 'no'}`);
+      const skillList = skills.filter((s: string) => s !== 'help' && s !== 'clear');
+      this.out(`Session started — model: ${model}, tools: ${tools}, skills: ${skillList.length > 0 ? skillList.join(', ') : 'none'}`);
       return;
     }
 

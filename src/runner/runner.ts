@@ -100,6 +100,7 @@ async function runSingle(
     mode: condition.type,
     deep: condition.type === 'skill' ? condition.deep : undefined,
     fileOutput: condition.type === 'skill' ? condition.fileOutput : undefined,
+    expectedMinAgents: condition.type === 'skill' ? condition.expectedMinAgents : undefined,
     claudeModel: opts.model ?? extractModelFromEvents(runId),
     claudeCliVersion,
     exitCode,

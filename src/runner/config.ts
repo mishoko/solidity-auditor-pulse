@@ -22,6 +22,7 @@ const SkillConditionSchema = z.object({
   command: z.string(),
   deep: z.boolean().optional(),
   fileOutput: z.boolean().optional(),
+  expectedMinAgents: z.number().int().min(1).optional(),
 });
 
 const ConditionSchema = z.discriminatedUnion('type', [

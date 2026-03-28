@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execSimple } from '../shared/util/shell.js';
 import * as log from '../shared/util/logger.js';
+import { skillDirName } from './skill.js';
 
 const ROOT = process.cwd();
 
@@ -87,7 +88,8 @@ export async function prepareWorkspace(
   if (skillVersion && skillSrcPath) {
     const commandsDir = path.join(wsDir, '.claude', 'commands');
     fs.mkdirSync(commandsDir, { recursive: true });
-    const skillDest = path.join(commandsDir, 'solidity-auditor');
+    const dirName = skillDirName(skillVersion);
+    const skillDest = path.join(commandsDir, dirName);
     await execSimple(`cp -R "${skillSrcPath}" "${skillDest}"`);
 
     // Fix /tmp/ collision: rewrite hardcoded /tmp/audit- paths to fully-scoped paths.
@@ -188,21 +190,23 @@ function writeWorkspaceClaudeMd(wsDir: string, codebasePath: string): void {
  * Throws if mismatched — never run with the wrong skill.
  */
 function verifySkillVersion(wsDir: string, expectedVersion: string): void {
-  const versionFile = path.join(wsDir, '.claude', 'commands', 'solidity-auditor', 'VERSION');
-  if (!fs.existsSync(versionFile)) {
+  const dirName = skillDirName(expectedVersion);
+  const installedFile = path.join(wsDir, '.claude', 'commands', dirName, 'VERSION');
+  if (!fs.existsSync(installedFile)) {
     throw new Error(
-      `Skill verification failed: no VERSION file at ${versionFile}. ` +
-      `Ensure skills_versions/${expectedVersion}/solidity-auditor/VERSION exists.`
+      `Skill verification failed: no VERSION file at ${installedFile}. ` +
+      `Ensure skills_versions/${expectedVersion}/${dirName}/VERSION exists.`
     );
   }
-  const installed = fs.readFileSync(versionFile, 'utf8').trim();
-  // VERSION file may contain "1" or "v1" — normalize both to compare
-  const normalize = (v: string) => v.replace(/^v/, '');
-  if (normalize(installed) !== normalize(expectedVersion)) {
+  // Compare installed VERSION against the source VERSION file (not the directory name)
+  const sourceFile = path.join(ROOT, 'skills_versions', expectedVersion, dirName, 'VERSION');
+  const installed = fs.readFileSync(installedFile, 'utf8').trim();
+  const source = fs.existsSync(sourceFile) ? fs.readFileSync(sourceFile, 'utf8').trim() : installed;
+  if (installed !== source) {
     throw new Error(
       `Skill version mismatch in workspace ${wsDir}: ` +
-      `expected "${expectedVersion}", got "${installed}". ` +
-      `This usually means Claude would resolve to the wrong .claude/commands/.`
+      `installed "${installed}", source "${source}". ` +
+      `Wrong skill was copied to .claude/commands/.`
     );
   }
 }

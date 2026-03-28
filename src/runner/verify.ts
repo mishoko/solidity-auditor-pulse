@@ -378,7 +378,7 @@ export function verifyRun(
   const agents = trackAgents(events);
 
   if (meta.mode === 'skill') {
-    const expectedMin = meta.conditionId.includes('v2') ? 5 : 4;
+    const expectedMin = meta.expectedMinAgents ?? 4;
 
     // 6a: Spawn count
     checks['agents_spawned'] = {
@@ -430,10 +430,11 @@ export function verifyRun(
   // ── Check 7: Init event config (bare runs) ──
   const initEvent = events.find(e => e.type === 'system' && e.subtype === 'init');
   if (initEvent && meta.mode === 'bare') {
-    const hasSkillCommand = (initEvent.slash_commands ?? []).includes('solidity-auditor');
+    const slashCommands: string[] = initEvent.slash_commands ?? [];
+    const leakedSkill = slashCommands.find(cmd => cmd !== 'help' && cmd !== 'clear');
     checks['bare_no_skill_visible'] = {
-      ok: !hasSkillCommand,
-      detail: hasSkillCommand ? 'solidity-auditor visible in bare run!' : 'skill correctly hidden',
+      ok: !leakedSkill,
+      detail: leakedSkill ? `${leakedSkill} visible in bare run!` : 'skill correctly hidden',
     };
   }
 
