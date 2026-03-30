@@ -13,3 +13,4 @@ workspaces/*
 summary.md
 dashboard.html
 .claude/settings.local.json
+tests/fixtures/report-data-input/report-data.json

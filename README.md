@@ -130,7 +130,7 @@ npm run archive:dry                                  # Preview
 
 # Dev
 npm run build                                        # Build TypeScript
-npm run test                                         # Run test suite (271 tests)
+npm run test                                         # Run test suite (275 tests)
 ```
 
 ## Project Structure
@@ -149,7 +149,7 @@ datasets/           Solidity codebases (git submodules + inline canary)
 skills_versions/    Pinned skill snapshots with provenance tracking
 ground_truth/       Known-bug answer keys per codebase (from C4/CodeHawks reports)
 docs/               Technical documentation (isolation strategy, pipeline flows)
-tests/              Test suite (Vitest, 266 tests)
+tests/              Test suite (Vitest, 275 tests)
 ```
 
 ## Analysis Pipeline
@@ -198,8 +198,12 @@ See [CLAUDE.md](CLAUDE.md) for the full environment variable reference and deep 
 | [CLAUDE.md](CLAUDE.md) | Complete technical reference (architecture, troubleshooting, verification checks) |
 | [Isolation Strategy](docs/isolation-and-contamination-prevention.md) | 11 contamination risks and defense layers |
 | [Pipeline Flows](docs/pipeline-flows.md) | Visual flowcharts and per-step documentation of the analysis pipeline |
-| [Architecture](docs/classifier-rewrite-plan.md) | Design decisions and module structure |
+| [Benchmark Prompt](docs/benchmark-run-prompt.md) | Standard audit prompt template and scoring rubric |
 | [Platform Limitations](docs/persisted-output-trap.md) | Known Claude Code platform interactions affecting large codebases |
+
+## Acknowledgments
+
+This experiment was sponsored by [Pashov Audit Group](https://x.com/PashovAuditGrp). The included skill benchmarks ship with pinned snapshots of the [solidity-auditor](https://github.com/pashov/skills) as baseline conditions.
 
 ## License
 

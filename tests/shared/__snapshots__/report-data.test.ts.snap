@@ -22,7 +22,7 @@ exports[`full shape snapshot > matches snapshot (excluding timestamp) 1`] = `
           "consistency": 0.5,
           "fpRate": 0.14285714285714285,
           "gtTotal": 3,
-          "label": "V2",
+          "label": "skill_v2",
           "plausibleNovels": 1,
           "plausibleNovelsFiltered": 1,
           "totalFindings": 7,
@@ -57,7 +57,7 @@ exports[`full shape snapshot > matches snapshot (excluding timestamp) 1`] = `
       ],
       "codebaseId": "test-codebase",
       "conditionLabels": [
-        "V2",
+        "skill_v2",
         "Bare CC",
       ],
       "conditions": [
@@ -67,7 +67,7 @@ exports[`full shape snapshot > matches snapshot (excluding timestamp) 1`] = `
       "consistency": [
         {
           "conditionId": "skill_v2",
-          "conditionLabel": "V2",
+          "conditionLabel": "skill_v2",
           "findings": [
             {
               "foundCount": 2,
@@ -316,9 +316,9 @@ exports[`full shape snapshot > matches snapshot (excluding timestamp) 1`] = `
       "consistency": 0.5,
       "fpRate": 0.14285714285714285,
       "gtTotal": 3,
-      "label": "V2",
+      "label": "skill_v2",
       "plausibleNovelsFiltered": 1,
-      "subtitle": "5 agents + FP gate",
+      "subtitle": "",
       "validRuns": 2,
     },
     {

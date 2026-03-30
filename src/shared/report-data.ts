@@ -195,26 +195,45 @@ export interface ReportData {
   integrityViolations: string[];
 }
 
-// ─── Constants ───
+// ─── Condition ordering (derived from config) ───
 
-const CONDITION_ORDER: { id: string; label: string; subtitle: string }[] = [
-  { id: 'skill_v2', label: 'V2', subtitle: '5 agents + FP gate' },
-  { id: 'skill_v1_default', label: 'V1', subtitle: '4 agents (Sonnet)' },
-  { id: 'skill_v1_deep', label: 'V1 Deep', subtitle: '+ adversarial (Opus)' },
-  { id: 'bare_audit', label: 'Bare CC', subtitle: 'No skill, audit prompt only' },
-];
+interface ConditionInfo { id: string; label: string; subtitle: string }
+
+let _conditionOrder: ConditionInfo[] | null = null;
+
+function loadConditionOrder(): ConditionInfo[] {
+  if (_conditionOrder) return _conditionOrder;
+  const configPath = path.resolve(process.cwd(), 'config', 'bench.json');
+  try {
+    const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const conditions: { id: string; type: string }[] = raw.conditions ?? [];
+    _conditionOrder = conditions.map((c) => ({
+      id: c.id,
+      label: c.type === 'bare' ? 'Bare CC' : c.id.replace(/[-_]/g, ' ').replace(/\b\w/g, (ch: string) => ch.toUpperCase()),
+      subtitle: c.type === 'bare' ? 'No skill, audit prompt only' : `${c.id} skill`,
+    }));
+  } catch {
+    _conditionOrder = [];
+  }
+  return _conditionOrder;
+}
+
+/** Reset cached condition order (for tests). */
+export function _resetConditionOrder(): void { _conditionOrder = null; }
 
 function conditionLabel(id: string): string {
-  return CONDITION_ORDER.find((c) => c.id === id)?.label ?? id;
+  return loadConditionOrder().find((c) => c.id === id)?.label ?? id;
 }
 
 function conditionSubtitle(id: string): string {
-  return CONDITION_ORDER.find((c) => c.id === id)?.subtitle ?? '';
+  return loadConditionOrder().find((c) => c.id === id)?.subtitle ?? '';
 }
 
 function conditionSortIndex(id: string): number {
-  const idx = CONDITION_ORDER.findIndex((c) => c.id === id);
-  return idx >= 0 ? idx : 999;
+  // bare_audit always sorts last (it's the baseline)
+  if (id === 'bare_audit') return 9000;
+  const idx = loadConditionOrder().findIndex((c) => c.id === id);
+  return idx >= 0 ? idx : 8000;
 }
 
 const MIN_SKILL_FINDINGS = 1;

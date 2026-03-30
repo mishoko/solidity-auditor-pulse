@@ -2,13 +2,13 @@
 
 ## What This Is
 
-CLI tool that benchmarks the `solidity-auditor` Claude Code skill (from [pashov/skills](https://github.com/pashov/skills)) against a bare Claude baseline. Runs multiple iterations of each condition against real Solidity codebases, captures raw output, verifies execution integrity, and generates comparison reports with recall/FP scoring against ground truth.
+CLI tool that benchmarks Claude Code audit skills against each other amd/or a bare Claude  Code baseline/bare. Runs multiple iterations of each condition against real Solidity codebases, captures raw output, verifies execution integrity, and generates comparison reports with recall/FP scoring against ground truth.
 
 ## Setup Requirements
 
 - Node 20+
 - `claude` CLI installed (all LLM calls use the CLI binary via `child_process.spawn` — no Anthropic SDK)
-- **Exclude `results/` and `workspaces/` from cloud sync** (Dropbox, iCloud, OneDrive). File sync during benchmark writes causes data corruption — see [C2 root cause in rewrite plan](docs/classifier-rewrite-plan.md). Run `npm run setup` to create `.nosync` markers.
+- **Exclude `results/` and `workspaces/` from cloud sync** (Dropbox, iCloud, OneDrive). File sync during benchmark writes causes data corruption — see [Platform Limitations](docs/persisted-output-trap.md). Run `npm run setup` to create `.nosync` markers.
 
 ## Quickstart
 
@@ -69,7 +69,7 @@ ground_truth/       Known-bug answer keys per codebase (JSON, enables Recall/FP 
 ground_truth/reports/  Official C4 audit reports (markdown)
 docs/               Isolation strategy, benchmark prompt template, rewrite plan, testing strategy
 archive-results/    Archived result snapshots with MANIFEST.json (gitignored)
-tests/              Vitest test suite (266 tests, 15 files)
+tests/              Vitest test suite (275 tests, 17 files)
 ```
 
 ## How It Works

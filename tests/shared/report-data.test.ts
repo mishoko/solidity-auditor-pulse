@@ -79,9 +79,9 @@ describe('codebase data', () => {
 
   it('has correct conditions in order', () => {
     const cb = data.codebases[0]!;
-    // CONDITION_ORDER: skill_v2 first, then bare_audit
+    // Skills sort before bare_audit (baseline always last)
     expect(cb.conditions).toEqual(['skill_v2', 'bare_audit']);
-    expect(cb.conditionLabels).toEqual(['V2', 'Bare CC']);
+    expect(cb.conditionLabels).toEqual(['skill_v2', 'Bare CC']);
   });
 
   it('has correct number of runs', () => {
