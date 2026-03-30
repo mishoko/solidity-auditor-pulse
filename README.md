@@ -205,6 +205,8 @@ See [CLAUDE.md](CLAUDE.md) for the full environment variable reference and deep 
 
 This experiment was sponsored by [Pashov Audit Group](https://x.com/PashovAuditGrp). The included skill benchmarks ship with pinned snapshots of the [solidity-auditor](https://github.com/pashov/skills) as baseline conditions.
 
+We are thankful to [Code4rena](https://x.com/code4rena) for keeping an archive available online of past web3 audit events - instrumental for pulling our GT (ground truth).
+
 ## License
 
 [MIT](LICENSE)
